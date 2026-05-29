@@ -5,7 +5,7 @@ This is the entry point for the PayFlow payment processing system.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import payments
+from app.api import payments, monitoring
 from app.db.database import engine, Base
 
 # Create database tables
@@ -32,6 +32,9 @@ app.add_middleware(
 
 # Include payment routes
 app.include_router(payments.router)
+
+# Include monitoring routes
+app.include_router(monitoring.router)
 
 
 @app.get("/", tags=["health"])

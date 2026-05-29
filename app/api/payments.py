@@ -5,9 +5,13 @@ Defines the REST API routes for payment operations.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
+import logging
 from app.db.database import get_db
 from app.schemas.payment import PaymentCreate, PaymentResponse, PaymentCreateResponse
 from app.services.payment_service import PaymentService
+from app.services.queue_service import queue_service
+
+logger = logging.getLogger(__name__)
 
 # Create router for payment endpoints
 router = APIRouter(
@@ -26,7 +30,7 @@ router = APIRouter(
 def create_payment(
     payment: PaymentCreate,
     db: Session = Depends(get_db)
-):
+) -> PaymentCreateResponse:
     """
     Create a new payment.
     
@@ -34,11 +38,39 @@ def create_payment(
     - **amount**: Payment amount (must be greater than 0)
     
     Returns the payment ID and initial status (PENDING).
+    
+    Flow:
+    1. Save payment to database with PENDING status
+    2. Publish event to Redis queue for async processing
+    3. Return immediately to client
     """
-    # Create payment using service layer
+    # Step 1: Create payment in database (status = PENDING)
     new_payment = PaymentService.create_payment(db, payment)
     
-    # Return simplified response
+    # Step 2: Publish event to queue for async processing
+    try:
+        event_id = queue_service.publish_payment_event(
+            payment_id=new_payment.id,
+            user_id=new_payment.user_id,
+            amount=float(new_payment.amount)
+        )
+        
+        if event_id:
+            logger.info(
+                f"Payment {new_payment.id} created and queued for processing. "
+                f"Event ID: {event_id}"
+            )
+        else:
+            logger.warning(
+                f"Payment {new_payment.id} created but failed to queue event. "
+                f"Worker will not process this payment automatically."
+            )
+    except Exception as e:
+        logger.error(f"Error publishing payment event: {e}")
+        # Note: We don't fail the request even if queue publish fails
+        # The payment is already saved in the database
+    
+    # Step 3: Return immediately to client
     return PaymentCreateResponse(
         payment_id=new_payment.id,
         status=new_payment.status

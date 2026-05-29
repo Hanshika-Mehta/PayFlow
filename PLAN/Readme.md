@@ -629,3 +629,28 @@ Build a project where you deeply understand:
 * tradeoffs
 
 THAT is what Amazon SDE-2 interviews evaluate.
+
+
+
+
+
+
+current 
+Client Request
+    ↓
+[Middleware] → Authentication, Logging, Rate Limiting
+    ↓
+[API Endpoint] → Receives HTTP request
+    ↓
+[Schema] → Validates request data
+    ↓
+[Service] → Executes business logic
+    ↓
+[Model] → Interacts with database
+    ↓
+[Schema] → Formats response
+    ↓
+[Middleware] → Logs response
+    ↓
+Client Response
+
