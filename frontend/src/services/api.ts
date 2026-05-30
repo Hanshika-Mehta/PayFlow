@@ -62,6 +62,15 @@ export const paymentApi = {
   },
 };
 
+// Export individual functions for convenience
+export const createPayment = paymentApi.createPayment;
+export const getPayment = paymentApi.getPayment;
+export const getPaymentsByUser = paymentApi.getPaymentsByUser;
+export const getQueueStatus = paymentApi.getQueueStatus;
+export const getWorkerStatus = paymentApi.getWorkerStatus;
+export const getMetrics = paymentApi.getMetrics;
+export const getPaymentTimeline = paymentApi.getPaymentTimeline;
+
 export default api;
 
 // Made with Bob

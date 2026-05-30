@@ -7,13 +7,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#3B82F6',
-        success: '#10B981',
-        warning: '#F59E0B',
-        error: '#EF4444',
-        processing: '#8B5CF6',
-        background: '#0F172A',
-        surface: '#1E293B',
+        primary: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
+        },
+        success: {
+          50: '#f0fdf4',
+          100: '#dcfce7',
+          500: '#22c55e',
+          600: '#16a34a',
+        },
+        warning: {
+          50: '#fffbeb',
+          100: '#fef3c7',
+          500: '#f59e0b',
+          600: '#d97706',
+        },
+        error: {
+          50: '#fef2f2',
+          100: '#fee2e2',
+          500: '#ef4444',
+          600: '#dc2626',
+        },
+      },
+      boxShadow: {
+        'soft': '0 2px 8px rgba(0, 0, 0, 0.04)',
+        'card': '0 1px 3px rgba(0, 0, 0, 0.06)',
+        'hover': '0 4px 12px rgba(0, 0, 0, 0.08)',
       },
     },
   },

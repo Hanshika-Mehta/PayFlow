@@ -143,11 +143,11 @@ export default function CreatePayment() {
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-slate-400 mb-1">Payment ID</p>
                           <code className="text-sm text-blue-400 font-mono break-all">
-                            {result.payment_id}
+                            {result.id}
                           </code>
                         </div>
                         <button
-                          onClick={() => copyToClipboard(result.payment_id)}
+                          onClick={() => copyToClipboard(result.id)}
                           className="ml-3 p-2 hover:bg-slate-700 rounded-lg transition-colors"
                           title="Copy to clipboard"
                         >

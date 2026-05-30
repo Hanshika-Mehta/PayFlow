@@ -13,11 +13,17 @@ export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'SUCCESS' | 'FAILED';
 export interface PaymentCreateRequest {
   user_id: string;
   amount: number;
+  idempotency_key?: string;
 }
 
 export interface PaymentCreateResponse {
-  payment_id: string;
+  id: string;
+  user_id: string;
+  amount: number;
   status: PaymentStatus;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PaymentEvent {
