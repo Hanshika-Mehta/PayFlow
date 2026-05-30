@@ -60,6 +60,24 @@ export const paymentApi = {
     const response = await api.get<PaymentTimeline>(`/api/payments/${paymentId}/timeline`);
     return response.data;
   },
+
+  // Get dashboard stats
+  getDashboardStats: async (): Promise<any> => {
+    const response = await api.get('/api/dashboard/stats');
+    return response.data;
+  },
+
+  // Get queue contents
+  getQueueContents: async (): Promise<any> => {
+    const response = await api.get('/api/queue/contents');
+    return response.data;
+  },
+
+  // Get recent payments
+  getRecentPayments: async (limit: number = 10): Promise<any> => {
+    const response = await api.get(`/api/payments/recent?limit=${limit}`);
+    return response.data;
+  },
 };
 
 // Export individual functions for convenience
@@ -70,6 +88,9 @@ export const getQueueStatus = paymentApi.getQueueStatus;
 export const getWorkerStatus = paymentApi.getWorkerStatus;
 export const getMetrics = paymentApi.getMetrics;
 export const getPaymentTimeline = paymentApi.getPaymentTimeline;
+export const getDashboardStats = paymentApi.getDashboardStats;
+export const getQueueContents = paymentApi.getQueueContents;
+export const getRecentPayments = paymentApi.getRecentPayments;
 
 export default api;
 

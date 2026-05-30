@@ -17,13 +17,8 @@ export interface PaymentCreateRequest {
 }
 
 export interface PaymentCreateResponse {
-  id: string;
-  user_id: string;
-  amount: number;
+  payment_id: string;  // Backend returns payment_id, not id
   status: PaymentStatus;
-  retry_count: number;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface PaymentEvent {

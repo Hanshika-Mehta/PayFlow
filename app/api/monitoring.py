@@ -92,8 +92,14 @@ def get_metrics(db: Session = Depends(get_db)):
         # Get success count
         success_count = db.query(Payment).filter(Payment.status == "SUCCESS").count()
         
+        # Get processing count
+        processing_count = db.query(Payment).filter(Payment.status == "PROCESSING").count()
+        
         # Get failed count
         failed_count = db.query(Payment).filter(Payment.status == "FAILED").count()
+        
+        # Get pending count
+        pending_count = db.query(Payment).filter(Payment.status == "PENDING").count()
         
         # Calculate success rate
         success_rate = (success_count / total_payments * 100) if total_payments > 0 else 0
@@ -103,8 +109,12 @@ def get_metrics(db: Session = Depends(get_db)):
         
         return {
             "total_payments": total_payments,
+            "successful": success_count,
+            "processing": processing_count,
+            "failed": failed_count,
+            "pending": pending_count,
             "success_rate": round(success_rate, 2),
-            "avg_latency_ms": 0,  # Will be calculated with proper metrics
+            "avg_latency_ms": 0,
             "queue_depth": queue_depth,
             "active_workers": 1
         }
@@ -112,6 +122,10 @@ def get_metrics(db: Session = Depends(get_db)):
         logger.error(f"Error getting metrics: {e}")
         return {
             "total_payments": 0,
+            "successful": 0,
+            "processing": 0,
+            "failed": 0,
+            "pending": 0,
             "success_rate": 0,
             "avg_latency_ms": 0,
             "queue_depth": 0,
@@ -162,5 +176,131 @@ def get_payment_timeline(payment_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error getting payment timeline: {e}")
         return {"error": str(e)}
+
+
+@router.get("/dashboard/stats")
+def get_dashboard_stats(db: Session = Depends(get_db)):
+    """
+    Get dashboard statistics for real-time display.
+    
+    Returns:
+        Dashboard stats including payment counts by status
+    """
+    try:
+        redis_client = get_redis()
+        
+        # Get counts by status
+        total_payments = db.query(Payment).count()
+        successful = db.query(Payment).filter(Payment.status == "SUCCESS").count()
+        processing = db.query(Payment).filter(Payment.status == "PROCESSING").count()
+        failed = db.query(Payment).filter(Payment.status == "FAILED").count()
+        pending = db.query(Payment).filter(Payment.status == "PENDING").count()
+        
+        # Calculate percentages
+        success_rate = (successful / total_payments * 100) if total_payments > 0 else 0
+        processing_rate = (processing / total_payments * 100) if total_payments > 0 else 0
+        failed_rate = (failed / total_payments * 100) if total_payments > 0 else 0
+        
+        # Get queue length
+        queue_length = redis_client.xlen("payment_queue")
+        
+        return {
+            "total_payments": total_payments,
+            "successful": successful,
+            "success_rate": round(success_rate, 1),
+            "processing": processing,
+            "processing_rate": round(processing_rate, 1),
+            "failed": failed,
+            "failed_rate": round(failed_rate, 1),
+            "pending": pending,
+            "queue_length": queue_length,
+            "active_workers": 1  # TODO: Track actual worker count
+        }
+    except Exception as e:
+        logger.error(f"Error getting dashboard stats: {e}")
+        return {
+            "total_payments": 0,
+            "successful": 0,
+            "success_rate": 0,
+            "processing": 0,
+            "processing_rate": 0,
+            "failed": 0,
+            "failed_rate": 0,
+            "pending": 0,
+            "queue_length": 0,
+            "active_workers": 0,
+            "error": str(e)
+        }
+
+
+@router.get("/queue/contents")
+def get_queue_contents():
+    """
+    Get actual queue contents from Redis.
+    
+    Returns:
+        List of payment IDs currently in the queue
+    """
+    try:
+        redis_client = get_redis()
+        
+        # Get last 10 items from the queue
+        queue_items = []
+        try:
+            events = redis_client.xrevrange("payment_queue", count=10)
+            for event_id, event_data in events:
+                payment_id = event_data.get(b'payment_id', b'unknown').decode('utf-8')
+                queue_items.append({
+                    "payment_id": payment_id,
+                    "event_id": event_id,
+                    "timestamp": event_data.get(b'timestamp', b'').decode('utf-8')
+                })
+        except Exception as e:
+            logger.error(f"Error reading queue contents: {e}")
+        
+        return {
+            "queue_length": redis_client.xlen("payment_queue"),
+            "items": queue_items
+        }
+    except Exception as e:
+        logger.error(f"Error getting queue contents: {e}")
+        return {
+            "queue_length": 0,
+            "items": [],
+            "error": str(e)
+        }
+
+
+@router.get("/payments/recent")
+def get_recent_payments(limit: int = 10, db: Session = Depends(get_db)):
+    """
+    Get recent payments for display.
+    
+    Returns:
+        List of recent payments with details
+    """
+    try:
+        payments = db.query(Payment).order_by(Payment.created_at.desc()).limit(limit).all()
+        
+        return {
+            "payments": [
+                {
+                    "id": str(payment.id),
+                    "user_id": payment.user_id,
+                    "amount": str(payment.amount),
+                    "status": payment.status,
+                    "retry_count": payment.retry_count,
+                    "created_at": payment.created_at.isoformat(),
+                    "updated_at": payment.updated_at.isoformat()
+                }
+                for payment in payments
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting recent payments: {e}")
+        return {
+            "payments": [],
+            "error": str(e)
+        }
 
 # Made with Bob
