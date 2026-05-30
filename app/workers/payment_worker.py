@@ -1,11 +1,13 @@
 """
 Payment worker service.
 Continuously consumes payment events from Redis queue and processes them.
+Includes retry mechanism with exponential backoff and DLQ handling.
 """
 import time
 import logging
 import sys
 from pathlib import Path
+from datetime import datetime
 
 # Add parent directory to path to import app modules
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -13,6 +15,9 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from app.core.redis_client import get_redis
 from app.db.database import SessionLocal
 from app.services.payment_processor import PaymentProcessor
+from app.services.dlq_service import dlq_service
+from app.models.payment import Payment
+from app.core.config import settings
 from uuid import UUID
 
 # Configure logging
@@ -30,8 +35,9 @@ class PaymentWorker:
     Architecture:
     1. Continuously read events from Redis Stream
     2. For each event, process the payment
-    3. Update payment status in database
-    4. Acknowledge the event
+    3. Handle retries with exponential backoff
+    4. Move to DLQ after max retries
+    5. Acknowledge the event
     """
     
     QUEUE_NAME = "payment_queue"
@@ -68,16 +74,17 @@ class PaymentWorker:
     
     def process_event(self, event_id: str, event_data: dict):
         """
-        Process a single payment event.
+        Process a single payment event with retry and DLQ handling.
         
         Args:
             event_id: Redis stream event ID
             event_data: Event payload containing payment details
         """
+        db = None
         try:
             payment_id = UUID(event_data.get('payment_id'))
             user_id = event_data.get('user_id')
-            amount = event_data.get('amount')
+            amount = float(event_data.get('amount'))
             
             logger.info(
                 f"Processing payment event: "
@@ -87,25 +94,78 @@ class PaymentWorker:
             # Create database session
             db = SessionLocal()
             
-            try:
-                # Process the payment
-                success = self.processor.process_payment(db, payment_id)
-                
-                if success:
-                    logger.info(f"Payment {payment_id} processed successfully")
-                else:
-                    logger.warning(f"Payment {payment_id} processing failed")
-                
+            # Get payment from database
+            payment = db.query(Payment).filter(Payment.id == payment_id).first()
+            
+            if not payment:
+                logger.error(f"Payment {payment_id} not found in database")
+                self.redis.xack(self.QUEUE_NAME, self.CONSUMER_GROUP, event_id)
+                return
+            
+            # Check if payment should be retried
+            if payment.next_retry_at and payment.next_retry_at > datetime.utcnow():
+                # Not time to retry yet, skip this event
+                logger.debug(
+                    f"Payment {payment_id} scheduled for retry at {payment.next_retry_at}, skipping"
+                )
+                return
+            
+            # Process the payment
+            success = self.processor.process_payment(db, payment_id)
+            
+            # Refresh payment to get updated values
+            db.refresh(payment)
+            
+            if success:
+                logger.info(f"✓ Payment {payment_id} processed successfully")
                 # Acknowledge the event (remove from pending)
                 self.redis.xack(self.QUEUE_NAME, self.CONSUMER_GROUP, event_id)
                 logger.info(f"Event {event_id} acknowledged")
                 
-            finally:
-                db.close()
+            else:
+                # Payment failed - check if we should retry or move to DLQ
+                if payment.retry_count >= payment.max_retries:
+                    # Max retries exceeded - move to DLQ
+                    logger.error(
+                        f"Payment {payment_id} exceeded max retries ({payment.max_retries}). "
+                        f"Moving to DLQ."
+                    )
+                    
+                    # Move to DLQ
+                    dlq_service.move_to_dlq(
+                        payment_id=payment_id,
+                        user_id=user_id,
+                        amount=amount,
+                        error_message=payment.last_error or "Unknown error",
+                        error_type=payment.error_type or "UNKNOWN",
+                        retry_count=payment.retry_count
+                    )
+                    
+                    # Update payment status to DLQ
+                    payment.status = "DLQ"
+                    payment.moved_to_dlq_at = datetime.utcnow()
+                    db.commit()
+                    
+                    # Acknowledge the event (remove from queue)
+                    self.redis.xack(self.QUEUE_NAME, self.CONSUMER_GROUP, event_id)
+                    logger.info(f"Event {event_id} acknowledged and moved to DLQ")
+                    
+                else:
+                    # Will retry - calculate delay
+                    delay = PaymentProcessor.calculate_retry_delay(payment.retry_count)
+                    logger.warning(
+                        f"Payment {payment_id} will be retried in {delay}s "
+                        f"(attempt {payment.retry_count}/{payment.max_retries})"
+                    )
+                    # Don't acknowledge yet - will be retried
                 
         except Exception as e:
-            logger.error(f"Error processing event {event_id}: {e}")
+            logger.error(f"Error processing event {event_id}: {e}", exc_info=True)
             # Event will remain in pending and can be retried
+            
+        finally:
+            if db:
+                db.close()
     
     def start(self):
         """

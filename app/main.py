@@ -5,7 +5,7 @@ This is the entry point for the PayFlow payment processing system.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import payments, monitoring
+from app.api import payments, monitoring, retry_monitoring
 from app.db.database import engine, Base
 
 # Create database tables
@@ -15,8 +15,8 @@ Base.metadata.create_all(bind=engine)
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Distributed Payment Processing Simulation Platform",
-    version="1.0.0",
+    description="Distributed Payment Processing Simulation Platform - Week 3: Retry + DLQ",
+    version="2.0.0",
     docs_url="/docs",  # Swagger UI
     redoc_url="/redoc"  # ReDoc UI
 )
@@ -35,6 +35,9 @@ app.include_router(payments.router)
 
 # Include monitoring routes
 app.include_router(monitoring.router)
+
+# Include retry and DLQ monitoring routes
+app.include_router(retry_monitoring.router)
 
 
 @app.get("/", tags=["health"])

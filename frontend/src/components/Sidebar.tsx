@@ -6,6 +6,7 @@ import {
   Users,
   Activity,
   RotateCcw,
+  Skull,
   Gauge,
   Database,
   BarChart3,
@@ -20,6 +21,7 @@ const menuItems = [
   { path: '/workers', icon: Users, label: 'Worker Monitor' },
   { path: '/events', icon: Activity, label: 'Events' },
   { path: '/retries', icon: RotateCcw, label: 'Retry Monitor' },
+  { path: '/dlq', icon: Skull, label: 'Dead Letter Queue' },
   { path: '/rate-limiting', icon: Gauge, label: 'Rate Limiting' },
   { path: '/cache', icon: Database, label: 'Cache' },
   { path: '/metrics', icon: BarChart3, label: 'Metrics' },
@@ -80,7 +82,7 @@ const Sidebar = () => {
             Development
           </div>
           <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
-            v1.0.0
+            v2.0.0 - Week 3
           </div>
         </div>
       </div>

@@ -1,129 +1,160 @@
 import { useState, useEffect } from 'react';
-import { RotateCcw, AlertTriangle, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { RotateCcw, AlertTriangle, Clock, CheckCircle2, XCircle, TrendingUp } from 'lucide-react';
+import api from '../services/api';
 
-interface RetryItem {
-  id: string;
-  attempt: number;
-  maxAttempts: number;
-  error: string;
-  countdown: number;
-  status: 'retrying' | 'waiting' | 'succeeded' | 'exhausted';
-  backoffDelay: number;
+interface RetryStats {
+  total_payments_with_retries: number;
+  retry_count_distribution: Record<string, number>;
+  pending_retry: number;
+  ready_for_retry: number;
+  average_retry_count: number;
+  error_type_distribution: Record<string, number>;
+  recent_failures: Array<{
+    payment_id: string;
+    user_id: string;
+    amount: number;
+    retry_count: number;
+    error_type: string;
+    last_error: string;
+    next_retry_at: string | null;
+    updated_at: string;
+  }>;
 }
-
-const INITIAL_RETRIES: RetryItem[] = [
-  { id: 'pay_1715751111111', attempt: 2, maxAttempts: 3, error: 'Gateway Timeout', countdown: 4, status: 'waiting', backoffDelay: 4 },
-  { id: 'pay_1715752222222', attempt: 1, maxAttempts: 3, error: 'Connection Refused', countdown: 2, status: 'waiting', backoffDelay: 2 },
-  { id: 'pay_1715753333333', attempt: 3, maxAttempts: 3, error: 'Service Unavailable', countdown: 0, status: 'exhausted', backoffDelay: 8 },
-];
 
 const BACKOFF_SEQUENCE = [1, 2, 4, 8, 16];
 
 const RetryMonitor = () => {
-  const [retries, setRetries] = useState(INITIAL_RETRIES);
-  const [totalRetries, setTotalRetries] = useState(12);
-  const recoveryRate = 83;
+  const [stats, setStats] = useState<RetryStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate countdown
+  // Fetch retry stats
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/monitoring/retry-stats');
+      setStats(response.data);
+      setError(null);
+    } catch (err) {
+      setError('Failed to fetch retry statistics');
+      console.error('Error fetching retry stats:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setRetries((prev) =>
-        prev.map((r) => {
-          if (r.status === 'waiting' && r.countdown > 0) {
-            return { ...r, countdown: r.countdown - 1 };
-          }
-          if (r.status === 'waiting' && r.countdown <= 0) {
-            // Simulate retry
-            if (Math.random() > 0.4) {
-              return { ...r, status: 'succeeded' as const };
-            }
-            if (r.attempt >= r.maxAttempts) {
-              return { ...r, status: 'exhausted' as const };
-            }
-            const nextAttempt = r.attempt + 1;
-            const delay = BACKOFF_SEQUENCE[nextAttempt - 1] || 16;
-            return { ...r, attempt: nextAttempt, countdown: delay, backoffDelay: delay, status: 'waiting' as const };
-          }
-          return r;
-        })
-      );
-    }, 1000);
+    fetchStats();
+    // Refresh every 5 seconds
+    const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const addRetry = () => {
-    const id = `pay_${Date.now()}`;
-    const errors = ['Gateway Timeout', 'Connection Refused', 'Service Unavailable', 'Rate Limited', 'Internal Error'];
-    setRetries((prev) => [
-      {
-        id,
-        attempt: 1,
-        maxAttempts: 3,
-        error: errors[Math.floor(Math.random() * errors.length)],
-        countdown: 1,
-        status: 'waiting' as const,
-        backoffDelay: 1,
-      },
-      ...prev,
-    ]);
-    setTotalRetries((t) => t + 1);
+  const calculateCountdown = (nextRetryAt: string | null): number => {
+    if (!nextRetryAt) return 0;
+    const now = new Date().getTime();
+    const retryTime = new Date(nextRetryAt).getTime();
+    const diff = Math.max(0, Math.ceil((retryTime - now) / 1000));
+    return diff;
   };
+
+  if (loading && !stats) {
+    return (
+      <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
+        <div style={{ textAlign: 'center', padding: 60, color: '#94a3b8' }}>
+          <RotateCcw className="animate-spin-slow" style={{ width: 32, height: 32, margin: '0 auto 12px' }} />
+          <p>Loading retry statistics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
+        <div style={{ textAlign: 'center', padding: 60, color: '#ef4444' }}>
+          <AlertTriangle style={{ width: 32, height: 32, margin: '0 auto 12px' }} />
+          <p>{error}</p>
+          <button
+            onClick={fetchStats}
+            style={{
+              marginTop: 16,
+              padding: '8px 16px',
+              background: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const totalRetries = stats?.total_payments_with_retries || 0;
+  const activeRetries = stats?.pending_retry || 0;
+  const readyForRetry = stats?.ready_for_retry || 0;
+  const avgRetryCount = stats?.average_retry_count || 0;
+  const recentFailures = stats?.recent_failures || [];
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
-      {/* ── Header ──────────────────────────────── */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Retry Monitor</h1>
           <p style={{ fontSize: 14, color: '#94a3b8', marginTop: 2 }}>Exponential backoff and retry visualization</p>
         </div>
         <button
-          onClick={addRetry}
+          onClick={fetchStats}
           style={{
             padding: '8px 16px',
-            background: '#fef2f2',
-            color: '#ef4444',
-            border: '1px solid #fee2e2',
+            background: '#eff6ff',
+            color: '#3b82f6',
+            border: '1px solid #dbeafe',
             borderRadius: 8,
             fontSize: 13,
             fontWeight: 600,
             cursor: 'pointer',
             transition: 'all 0.15s ease',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.background = '#fee2e2'}
-          onMouseLeave={(e) => e.currentTarget.style.background = '#fef2f2'}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#dbeafe'}
+          onMouseLeave={(e) => e.currentTarget.style.background = '#eff6ff'}
         >
-          Simulate Failure
+          Refresh
         </button>
       </div>
 
-      {/* ── Stats Cards ─────────────────────────── */}
+      {/* Stats Cards */}
       <div className="stats-grid" style={{ marginBottom: 24 }}>
         <div className="stat-card">
-          <div className="stat-label">Active Retries</div>
+          <div className="stat-label">Pending Retry</div>
           <div className="stat-value" style={{ color: '#d97706' }}>
-            {retries.filter((r) => r.status === 'waiting').length}
+            {activeRetries}
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Total Retries</div>
+          <div className="stat-label">Ready for Retry</div>
+          <div className="stat-value" style={{ color: '#16a34a' }}>{readyForRetry}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Total with Retries</div>
           <div className="stat-value">{totalRetries}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Recovery Rate</div>
-          <div className="stat-value" style={{ color: '#16a34a' }}>{recoveryRate}%</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Exhausted</div>
-          <div className="stat-value" style={{ color: '#ef4444' }}>
-            {retries.filter((r) => r.status === 'exhausted').length}
+          <div className="stat-label">Avg Retry Count</div>
+          <div className="stat-value" style={{ color: '#6366f1' }}>
+            {avgRetryCount.toFixed(2)}
           </div>
         </div>
       </div>
 
-      {/* ── Main Layout Split ───────────────────── */}
+      {/* Main Layout Split */}
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {/* Retry Queue card list */}
+        {/* Recent Failures List */}
         <div className="card" style={{ flex: 2, minWidth: 320, overflow: 'hidden' }}>
           <div style={{
             padding: '16px 20px',
@@ -133,131 +164,174 @@ const RetryMonitor = () => {
             gap: 10
           }}>
             <RotateCcw style={{ width: 16, height: 16, color: '#64748b' }} />
-            <h2 className="section-title">Retry Queue</h2>
+            <h2 className="section-title">Recent Failures</h2>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {retries.map((r, index) => (
-              <div
-                key={r.id + r.attempt + index}
-                style={{
-                  padding: '16px 20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  borderBottom: index < retries.length - 1 ? '1px solid #f1f5f9' : 'none',
-                }}
-              >
-                {/* Status bubble */}
-                <div style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background:
-                    r.status === 'succeeded' ? '#dcfce7' :
-                    r.status === 'exhausted' ? '#fee2e2' :
-                    '#fffbeb',
-                  border:
-                    r.status === 'succeeded' ? '1px solid #bbf7d0' :
-                    r.status === 'exhausted' ? '1px solid #fecaca' :
-                    '1px solid #fde68a',
-                  flexShrink: 0,
-                }}>
-                  {r.status === 'succeeded' ? (
-                    <CheckCircle2 style={{ width: 18, height: 18, color: '#15803d' }} />
-                  ) : r.status === 'exhausted' ? (
-                    <XCircle style={{ width: 18, height: 18, color: '#dc2626' }} />
-                  ) : (
-                    <RotateCcw
-                      className={r.countdown <= 1 ? 'animate-spin-slow' : ''}
-                      style={{ width: 18, height: 18, color: '#d97706' }}
-                    />
-                  )}
-                </div>
-
-                {/* ID and Error info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <code style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#334155' }}>{r.id}</code>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: '#dc2626', fontSize: 11, fontWeight: 500 }}>
-                    <AlertTriangle style={{ width: 12, height: 12 }} />
-                    {r.error}
-                  </div>
-                </div>
-
-                {/* Attempt counter */}
-                <div style={{ textAlign: 'center', minWidth: 60 }}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{r.attempt} / {r.maxAttempts}</p>
-                  <p style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>attempt</p>
-                </div>
-
-                {/* Countdown progress loader */}
-                <div style={{ width: 90, textAlign: 'center' }}>
-                  {r.status === 'waiting' ? (
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: '#d97706' }}>{r.countdown}s</p>
-                      <div style={{ height: 4, background: '#f1f5f9', borderRadius: 999, marginTop: 4, overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            background: '#d97706',
-                            borderRadius: 999,
-                            width: `${(r.countdown / r.backoffDelay) * 100}%`,
-                            transition: 'width 1s linear'
-                          }}
+            {recentFailures.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+                <CheckCircle2 style={{ width: 32, height: 32, margin: '0 auto 12px' }} />
+                <p>No recent failures</p>
+              </div>
+            ) : (
+              recentFailures.map((failure, index) => {
+                const countdown = calculateCountdown(failure.next_retry_at);
+                const maxRetries = 3;
+                
+                return (
+                  <div
+                    key={failure.payment_id}
+                    style={{
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      borderBottom: index < recentFailures.length - 1 ? '1px solid #f1f5f9' : 'none',
+                    }}
+                  >
+                    {/* Status bubble */}
+                    <div style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: countdown > 0 ? '#fffbeb' : '#fee2e2',
+                      border: countdown > 0 ? '1px solid #fde68a' : '1px solid #fecaca',
+                      flexShrink: 0,
+                    }}>
+                      {countdown > 0 ? (
+                        <RotateCcw
+                          className={countdown <= 2 ? 'animate-spin-slow' : ''}
+                          style={{ width: 18, height: 18, color: '#d97706' }}
                         />
+                      ) : (
+                        <XCircle style={{ width: 18, height: 18, color: '#dc2626' }} />
+                      )}
+                    </div>
+
+                    {/* ID and Error info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <code style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#334155' }}>
+                        {failure.payment_id.substring(0, 13)}...
+                      </code>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: '#dc2626', fontSize: 11, fontWeight: 500 }}>
+                        <AlertTriangle style={{ width: 12, height: 12 }} />
+                        {failure.error_type || 'Unknown Error'}
                       </div>
                     </div>
-                  ) : r.status === 'succeeded' ? (
-                    <span className="badge badge-green">Recovered</span>
-                  ) : (
-                    <span className="badge badge-red">Failed</span>
-                  )}
-                </div>
-              </div>
-            ))}
+
+                    {/* Attempt counter */}
+                    <div style={{ textAlign: 'center', minWidth: 60 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                        {failure.retry_count} / {maxRetries}
+                      </p>
+                      <p style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>attempt</p>
+                    </div>
+
+                    {/* Countdown or status */}
+                    <div style={{ width: 90, textAlign: 'center' }}>
+                      {countdown > 0 ? (
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: '#d97706' }}>{countdown}s</p>
+                          <div style={{ height: 4, background: '#f1f5f9', borderRadius: 999, marginTop: 4, overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                height: '100%',
+                                background: '#d97706',
+                                borderRadius: 999,
+                                width: `${Math.min(100, (countdown / 60) * 100)}%`,
+                                transition: 'width 1s linear'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : failure.retry_count >= maxRetries ? (
+                        <span className="badge badge-red">Max Retries</span>
+                      ) : (
+                        <span className="badge badge-yellow">Ready</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Backoff Panel explanation */}
-        <div className="card" style={{ flex: 1, padding: 24, minWidth: 280, alignSelf: 'start', position: 'sticky', top: 24 }}>
-          <h2 className="section-title" style={{ marginBottom: 8 }}>Exponential Backoff</h2>
-          <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5, marginBottom: 20 }}>
-            Each retry waits exponentially longer to avoid overwhelming a failing downstream transaction processor.
-          </p>
+        {/* Right Column: Stats and Backoff Panel */}
+        <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Error Type Distribution */}
+          {stats && Object.keys(stats.error_type_distribution).length > 0 && (
+            <div className="card" style={{ padding: 24 }}>
+              <h2 className="section-title" style={{ marginBottom: 16 }}>Error Types</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {Object.entries(stats.error_type_distribution).map(([errorType, count]) => (
+                  <div key={errorType} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {errorType}
+                    </span>
+                    <div style={{ flex: 1, height: 20, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          height: '100%',
+                          background: 'linear-gradient(to right, #ef4444, #f87171)',
+                          borderRadius: 6,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'end',
+                          paddingRight: 8,
+                          width: `${(count / Math.max(...Object.values(stats.error_type_distribution))) * 100}%`,
+                        }}
+                      >
+                        <span style={{ fontSize: 9, fontWeight: 800, color: '#ffffff' }}>{count}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {BACKOFF_SEQUENCE.map((delay, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', width: 64 }}>Attempt {i + 1}</span>
-                <div style={{ flex: 1, height: 20, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      height: '100%',
-                      background: 'linear-gradient(to right, #2563eb, #60a5fa)',
-                      borderRadius: 6,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'end',
-                      paddingRight: 8,
-                      width: `${(delay / 16) * 100}%`,
-                      transition: 'width 0.4s ease'
-                    }}
-                  >
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#ffffff' }}>{delay}s</span>
+          {/* Backoff Panel */}
+          <div className="card" style={{ padding: 24 }}>
+            <h2 className="section-title" style={{ marginBottom: 8 }}>Exponential Backoff</h2>
+            <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5, marginBottom: 20 }}>
+              Each retry waits exponentially longer to avoid overwhelming a failing downstream transaction processor.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {BACKOFF_SEQUENCE.map((delay, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', width: 64 }}>Attempt {i + 1}</span>
+                  <div style={{ flex: 1, height: 20, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        background: 'linear-gradient(to right, #2563eb, #60a5fa)',
+                        borderRadius: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'end',
+                        paddingRight: 8,
+                        width: `${(delay / 16) * 100}%`,
+                        transition: 'width 0.4s ease'
+                      }}
+                    >
+                      <span style={{ fontSize: 9, fontWeight: 800, color: '#ffffff' }}>{delay}s</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
 
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Clock style={{ width: 14, height: 14, color: '#94a3b8' }} />
-              <span style={{ fontSize: 12, color: '#64748b' }}>
-                Formula: <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontFamily: 'var(--font-mono)', color: '#2563eb' }}>2^(attempt-1) sec</code>
-              </span>
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock style={{ width: 14, height: 14, color: '#94a3b8' }} />
+                <span style={{ fontSize: 12, color: '#64748b' }}>
+                  Formula: <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontFamily: 'var(--font-mono)', color: '#2563eb' }}>2^(attempt-1) sec</code>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -267,3 +341,5 @@ const RetryMonitor = () => {
 };
 
 export default RetryMonitor;
+
+// Made with Bob

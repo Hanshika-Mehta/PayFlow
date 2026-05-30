@@ -19,6 +19,19 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str
     
+    # Retry Configuration
+    MAX_RETRIES: int = 3
+    RETRY_BASE_DELAY: int = 1  # Base delay in seconds for exponential backoff
+    RETRY_MAX_DELAY: int = 60  # Maximum delay in seconds
+    
+    # Failure Simulation
+    FAILURE_RATE: float = 0.3  # 30% failure rate for testing
+    ENABLE_FAILURE_SIMULATION: bool = True
+    
+    # DLQ Configuration
+    DLQ_STREAM_NAME: str = "payment_dlq"
+    DLQ_MAX_LENGTH: int = 10000
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
