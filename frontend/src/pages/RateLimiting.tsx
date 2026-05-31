@@ -10,25 +10,28 @@ interface RequestLog {
 }
 
 interface RateLimitStats {
-  total_requests: number;
-  allowed_requests: number;
-  blocked_requests: number;
-  block_rate: number;
-  active_user_limits: number;
-  active_ip_limits: number;
-  redis_connected: boolean;
+  total_requests?: number;
+  allowed_requests?: number;
+  blocked_requests?: number;
+  block_rate?: number;
+  active_user_limits?: number;
+  active_ip_limits?: number;
+  redis_connected?: boolean;
+  per_user_limit?: number;
+  per_ip_limit?: number;
+  window_seconds?: number;
 }
 
 interface RateLimitedUser {
-  user_id: string;
-  current_requests: number;
-  ttl_seconds: number;
+  user_id?: string;
+  current_requests?: number;
+  ttl_seconds?: number;
 }
 
 interface RateLimitedIP {
-  ip_address: string;
-  current_requests: number;
-  ttl_seconds: number;
+  ip_address?: string;
+  current_requests?: number;
+  ttl_seconds?: number;
 }
 
 const MAX_REQUESTS = 100;
@@ -162,10 +165,25 @@ const RateLimiting = () => {
                      percentage > 20 ? 'linear-gradient(to top, #f59e0b, #fbbf24)' :
                                        'linear-gradient(to top, #ef4444, #f87171)';
 
-  const formatTTL = (seconds: number): string => {
+  const formatTTL = (seconds?: number): string => {
+    if (typeof seconds !== 'number' || Number.isNaN(seconds)) return 'Unknown';
     if (seconds < 0) return 'Expired';
     if (seconds < 60) return `${seconds}s`;
     return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  };
+
+  const safeNumber = (value: unknown, fallback = 0): number => {
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  };
+
+  const getUserKey = (user: RateLimitedUser, index: number): string => {
+    const userId = user.user_id?.trim();
+    return userId ? `user-${userId}-${index}` : `user-unknown-${index}`;
+  };
+
+  const getIpKey = (ip: RateLimitedIP, index: number): string => {
+    const ipAddress = ip.ip_address?.trim();
+    return ipAddress ? `ip-${ipAddress}-${index}` : `ip-unknown-${index}`;
   };
 
   return (
@@ -199,27 +217,27 @@ const RateLimiting = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
           <div className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Total Requests</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#0f172a' }}>{stats.total_requests}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#0f172a' }}>{safeNumber(stats.total_requests)}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Allowed</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981' }}>{stats.allowed_requests}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981' }}>{safeNumber(stats.allowed_requests)}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Blocked</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{stats.blocked_requests}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{safeNumber(stats.blocked_requests)}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Block Rate</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{stats.block_rate.toFixed(1)}%</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{safeNumber(stats.block_rate).toFixed(1)}%</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Active Users</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#6366f1' }}>{stats.active_user_limits}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#6366f1' }}>{safeNumber(stats.active_user_limits)}</div>
           </div>
           <div className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Active IPs</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#8b5cf6' }}>{stats.active_ip_limits}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#8b5cf6' }}>{safeNumber(stats.active_ip_limits)}</div>
           </div>
         </div>
       )}
@@ -398,14 +416,14 @@ const RateLimiting = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map((user) => (
-                      <tr key={user.user_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px 20px', fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155' }}>{user.user_id}</td>
-                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#334155' }}>{user.current_requests} / 100</td>
+                    {users.map((user, index) => (
+                      <tr key={getUserKey(user, index)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 20px', fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155' }}>{user.user_id || 'unknown'}</td>
+                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#334155' }}>{safeNumber(user.current_requests)} / {safeNumber(stats?.per_user_limit, 100)}</td>
                         <td style={{ padding: '10px 20px', fontSize: 12, color: '#64748b' }}>{formatTTL(user.ttl_seconds)}</td>
                         <td style={{ padding: '10px 20px' }}>
                           <button
-                            onClick={() => handleResetUser(user.user_id)}
+                            onClick={() => handleResetUser(user.user_id || 'unknown')}
                             style={{
                               padding: '4px 12px',
                               borderRadius: 6,
@@ -450,14 +468,14 @@ const RateLimiting = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {ips.map((ip) => (
-                      <tr key={ip.ip_address} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px 20px', fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155' }}>{ip.ip_address}</td>
-                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#334155' }}>{ip.current_requests} / 200</td>
+                    {ips.map((ip, index) => (
+                      <tr key={getIpKey(ip, index)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 20px', fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155' }}>{ip.ip_address || 'unknown'}</td>
+                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#334155' }}>{safeNumber(ip.current_requests)} / {safeNumber(stats?.per_ip_limit, 200)}</td>
                         <td style={{ padding: '10px 20px', fontSize: 12, color: '#64748b' }}>{formatTTL(ip.ttl_seconds)}</td>
                         <td style={{ padding: '10px 20px' }}>
                           <button
-                            onClick={() => handleResetIP(ip.ip_address)}
+                            onClick={() => handleResetIP(ip.ip_address || 'unknown')}
                             style={{
                               padding: '4px 12px',
                               borderRadius: 6,
@@ -500,10 +518,10 @@ const RateLimiting = () => {
           <div className="card" style={{ padding: 20 }}>
             <h3 className="section-title" style={{ marginBottom: 12 }}>Configuration</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <DetailRow label="User Limit" value="100 req/min" />
-              <DetailRow label="IP Limit" value="200 req/min" />
+              <DetailRow label="User Limit" value={`${safeNumber(stats?.per_user_limit, 100)} req/min`} />
+              <DetailRow label="IP Limit" value={`${safeNumber(stats?.per_ip_limit, 200)} req/min`} />
               <DetailRow label="Algorithm" value="Sliding Window" />
-              <DetailRow label="Window Period" value="60s" />
+              <DetailRow label="Window Period" value={`${safeNumber(stats?.window_seconds, 60)}s`} />
             </div>
           </div>
 

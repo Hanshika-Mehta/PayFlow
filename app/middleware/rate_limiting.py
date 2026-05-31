@@ -109,6 +109,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         if not ip_allowed:
             logger.warning(f"IP rate limit exceeded for {ip_address}")
+            rate_limit_service.record_request_result(allowed=False)
             
             response = JSONResponse(
                 status_code=429,
@@ -135,6 +136,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         if not user_allowed:
             logger.warning(f"User rate limit exceeded for {user_id}")
+            rate_limit_service.record_request_result(allowed=False)
             
             response = JSONResponse(
                 status_code=429,
@@ -156,6 +158,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             
             return response
         
+        rate_limit_service.record_request_result(allowed=True)
+
         # Process request
         response = await call_next(request)
         

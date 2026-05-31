@@ -4,7 +4,7 @@ Implements sliding window rate limiting with Redis.
 """
 import time
 import logging
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, cast
 from app.core.redis_client import get_redis
 from app.core.config import settings
 
@@ -39,6 +39,91 @@ class RateLimitService:
             Redis key string
         """
         return f"rate_limit:{identifier_type}:{identifier}"
+
+    def _to_int(self, value: Any, default: int = 0) -> int:
+        """
+        Safely coerce Redis responses to integers.
+        
+        Args:
+            value: Redis response value
+            default: Fallback value if coercion fails
+            
+        Returns:
+            Integer value
+        """
+        try:
+            if value is None:
+                return default
+            return int(cast(Any, value))
+        except (TypeError, ValueError):
+            return default
+
+    def _get_ttl(self, key: str) -> int:
+        """
+        Get TTL for a Redis key as an integer.
+        
+        Args:
+            key: Redis key
+            
+        Returns:
+            TTL in seconds
+        """
+        return self._to_int(self.redis.ttl(key), -1)
+
+    def _get_counter(self, key: str) -> int:
+        """
+        Get a Redis counter value as an integer.
+        
+        Args:
+            key: Redis key
+            
+        Returns:
+            Counter value
+        """
+        return self._to_int(self.redis.get(key), 0)
+
+    def _get_stats_key(self, metric: str) -> str:
+        """
+        Get Redis key for aggregate rate limit statistics.
+        
+        Args:
+            metric: Metric name (total_requests, allowed_requests, blocked_requests)
+            
+        Returns:
+            Redis key string
+        """
+        return f"rate_limit:stats:{metric}"
+
+    def increment_stat(self, metric: str, amount: int = 1) -> int:
+        """
+        Increment an aggregate rate limit statistic.
+        
+        Args:
+            metric: Metric name to increment
+            amount: Amount to increment by
+            
+        Returns:
+            Updated counter value
+        """
+        try:
+            key = self._get_stats_key(metric)
+            return self._to_int(self.redis.incrby(key, amount), 0)
+        except Exception as e:
+            logger.error(f"Error incrementing rate limit stat {metric}: {e}")
+            return 0
+
+    def record_request_result(self, allowed: bool) -> None:
+        """
+        Record the outcome of a rate-limited request.
+        
+        Args:
+            allowed: Whether the request was allowed through
+        """
+        self.increment_stat("total_requests")
+        if allowed:
+            self.increment_stat("allowed_requests")
+        else:
+            self.increment_stat("blocked_requests")
     
     def check_rate_limit(
         self,
@@ -84,29 +169,29 @@ class RateLimitService:
                     "current": 1
                 }
             
-            current = int(current)
+            current_count = self._to_int(current)
             
-            if current >= limit:
+            if current_count >= limit:
                 # Rate limit exceeded
-                ttl = self.redis.ttl(key)
+                ttl = self._get_ttl(key)
                 reset_time = int(time.time()) + max(ttl, 0)
                 
                 logger.warning(
                     f"Rate limit exceeded for {identifier_type}:{identifier} "
-                    f"({current}/{limit} requests)"
+                    f"({current_count}/{limit} requests)"
                 )
                 
                 return False, {
                     "limit": limit,
                     "remaining": 0,
                     "reset": reset_time,
-                    "current": current,
+                    "current": current_count,
                     "retry_after": max(ttl, 0)
                 }
             
             # Increment counter
-            new_count = self.redis.incr(key)
-            ttl = self.redis.ttl(key)
+            new_count = self._to_int(self.redis.incr(key))
+            ttl = self._get_ttl(key)
             reset_time = int(time.time()) + max(ttl, 0)
             
             return True, {
@@ -174,7 +259,7 @@ class RateLimitService:
         try:
             key = self._get_key(identifier_type, identifier)
             current = self.redis.get(key)
-            ttl = self.redis.ttl(key)
+            ttl = self._get_ttl(key)
             
             if current is None:
                 return {
@@ -186,15 +271,15 @@ class RateLimitService:
                     "reset": int(time.time()) + self.window
                 }
             
-            current = int(current)
+            current_count = self._to_int(current)
             limit = self.per_user_limit if identifier_type == "user" else self.per_ip_limit
             
             return {
                 "identifier": identifier,
                 "type": identifier_type,
-                "current": current,
+                "current": current_count,
                 "limit": limit,
-                "remaining": max(0, limit - current),
+                "remaining": max(0, limit - current_count),
                 "reset": int(time.time()) + max(ttl, 0)
             }
             
@@ -248,7 +333,7 @@ class RateLimitService:
             top_users = []
             for key in user_keys[:10]:  # Top 10
                 try:
-                    count = int(self.redis.get(key) or 0)
+                    count = self._get_counter(key.decode('utf-8') if isinstance(key, bytes) else key)
                     user_id = key.decode('utf-8').split(':')[-1] if isinstance(key, bytes) else key.split(':')[-1]
                     top_users.append({
                         "user_id": user_id,
@@ -261,11 +346,20 @@ class RateLimitService:
             # Sort by request count
             top_users.sort(key=lambda x: x['requests'], reverse=True)
             
+            total_requests = self._get_counter(self._get_stats_key("total_requests"))
+            allowed_requests = self._get_counter(self._get_stats_key("allowed_requests"))
+            blocked_requests = self._get_counter(self._get_stats_key("blocked_requests"))
+            block_rate = (blocked_requests / total_requests * 100) if total_requests > 0 else 0.0
+
             return {
                 "enabled": self.enabled,
                 "per_user_limit": self.per_user_limit,
                 "per_ip_limit": self.per_ip_limit,
                 "window_seconds": self.window,
+                "total_requests": total_requests,
+                "allowed_requests": allowed_requests,
+                "blocked_requests": blocked_requests,
+                "block_rate": round(block_rate, 2),
                 "active_user_limits": len(user_keys),
                 "active_ip_limits": len(ip_keys),
                 "top_users": top_users[:5]  # Top 5
@@ -275,6 +369,10 @@ class RateLimitService:
             logger.error(f"Error getting rate limit stats: {e}")
             return {
                 "enabled": self.enabled,
+                "total_requests": 0,
+                "allowed_requests": 0,
+                "blocked_requests": 0,
+                "block_rate": 0.0,
                 "error": str(e)
             }
     
@@ -297,10 +395,10 @@ class RateLimitService:
             
             for key in user_keys:
                 try:
-                    count = int(self.redis.get(key) or 0)
+                    count = self._get_counter(key.decode('utf-8') if isinstance(key, bytes) else key)
                     if count >= self.per_user_limit:
                         user_id = key.decode('utf-8').split(':')[-1] if isinstance(key, bytes) else key.split(':')[-1]
-                        ttl = self.redis.ttl(key)
+                        ttl = self._get_ttl(key.decode('utf-8') if isinstance(key, bytes) else key)
                         violations.append({
                             "type": "user",
                             "identifier": user_id,
@@ -317,10 +415,11 @@ class RateLimitService:
             
             for key in ip_keys:
                 try:
-                    count = int(self.redis.get(key) or 0)
+                    redis_key = key.decode('utf-8') if isinstance(key, bytes) else key
+                    count = self._get_counter(redis_key)
                     if count >= self.per_ip_limit:
-                        ip = key.decode('utf-8').split(':')[-1] if isinstance(key, bytes) else key.split(':')[-1]
-                        ttl = self.redis.ttl(key)
+                        ip = redis_key.split(':')[-1]
+                        ttl = self._get_ttl(redis_key)
                         violations.append({
                             "type": "ip",
                             "identifier": ip,
