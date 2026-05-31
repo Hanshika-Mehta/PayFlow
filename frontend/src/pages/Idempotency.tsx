@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getIdempotencyStats, getIdempotencyKeys, deleteIdempotencyKey } from '../services/api';
+import { Database, CheckCircle, TrendingUp, Archive, RefreshCw, Trash2 } from 'lucide-react';
 
 interface IdempotencyStats {
   total_requests: number;
@@ -58,7 +59,6 @@ export default function Idempotency() {
     try {
       setDeleteLoading(key);
       await deleteIdempotencyKey(key);
-      // Refresh data after deletion
       await fetchData();
     } catch (err: any) {
       alert(`Failed to delete key: ${err.message}`);
@@ -69,7 +69,6 @@ export default function Idempotency() {
 
   useEffect(() => {
     fetchData();
-    // Refresh every 5 seconds
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -83,108 +82,123 @@ export default function Idempotency() {
 
   if (loading && !stats) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400">Loading idempotency data...</div>
+      <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
+        <div style={{ textAlign: 'center', padding: '60px 0', fontSize: 14, color: '#94a3b8' }}>
+          Loading idempotency data...
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-        <p className="text-red-400">Error: {error}</p>
-        <button
-          onClick={fetchData}
-          className="mt-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm"
-        >
-          Retry
-        </button>
+      <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
+        <div style={{ 
+          background: '#fef2f2', 
+          border: '1px solid #fecaca', 
+          borderRadius: 8, 
+          padding: 16 
+        }}>
+          <p style={{ color: '#dc2626', marginBottom: 8 }}>Error: {error}</p>
+          <button
+            onClick={fetchData}
+            style={{
+              padding: '8px 16px',
+              background: '#fee2e2',
+              border: 'none',
+              borderRadius: 6,
+              color: '#dc2626',
+              fontSize: 14,
+              cursor: 'pointer',
+              fontWeight: 500
+            }}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h1 className="text-2xl font-bold text-white">Idempotency Monitor</h1>
-          <p className="text-gray-400 mt-1">Track duplicate request prevention and cache performance</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Idempotency Monitor</h1>
+          <p style={{ fontSize: 14, color: '#94a3b8', marginTop: 2 }}>Track duplicate request prevention and cache performance</p>
         </div>
         <button
           onClick={fetchData}
           disabled={loading}
-          className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 rounded-lg text-sm disabled:opacity-50"
+          style={{
+            padding: '8px 16px',
+            background: loading ? '#f1f5f9' : '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 6,
+            color: '#2563eb',
+            fontSize: 14,
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}
         >
+          <RefreshCw style={{ width: 14, height: 14 }} />
           {loading ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
           {/* Total Requests */}
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm">Total Requests</p>
-                <p className="text-3xl font-bold text-white mt-2">{stats.total_requests}</p>
-              </div>
-              <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-              </div>
+          <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div className="stat-icon" style={{ background: '#dbeafe' }}>
+              <Database style={{ width: 18, height: 18, color: '#2563eb' }} />
+            </div>
+            <div>
+              <div className="stat-label">Total Requests</div>
+              <div className="stat-value">{stats.total_requests}</div>
             </div>
           </div>
 
           {/* Cache Hits */}
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm">Cache Hits</p>
-                <p className="text-3xl font-bold text-green-400 mt-2">{stats.cache_hits}</p>
-                <p className="text-xs text-gray-500 mt-1">Duplicates prevented</p>
-              </div>
-              <div className="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
+          <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div className="stat-icon" style={{ background: '#dcfce7' }}>
+              <CheckCircle style={{ width: 18, height: 18, color: '#16a34a' }} />
+            </div>
+            <div>
+              <div className="stat-label">Cache Hits</div>
+              <div className="stat-value">{stats.cache_hits}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Duplicates prevented</div>
             </div>
           </div>
 
           {/* Hit Rate */}
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm">Cache Hit Rate</p>
-                <p className="text-3xl font-bold text-purple-400 mt-2">
-                  {stats.hit_rate.toFixed(1)}%
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Efficiency metric</p>
+          <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div className="stat-icon" style={{ background: '#f3e8ff' }}>
+              <TrendingUp style={{ width: 18, height: 18, color: '#7c3aed' }} />
+            </div>
+            <div>
+              <div className="stat-label">Cache Hit Rate</div>
+              <div className="stat-value" style={{ fontSize: 22 }}>
+                {(stats.hit_rate ?? 0).toFixed(1)}<span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>%</span>
               </div>
-              <div className="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-              </div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Efficiency metric</div>
             </div>
           </div>
 
           {/* Cached Responses */}
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm">Cached Responses</p>
-                <p className="text-3xl font-bold text-yellow-400 mt-2">{stats.total_cached_responses}</p>
-                <p className="text-xs text-gray-500 mt-1">Active in Redis</p>
-              </div>
-              <div className="w-12 h-12 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-              </div>
+          <div className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div className="stat-icon" style={{ background: '#fef3c7' }}>
+              <Archive style={{ width: 18, height: 18, color: '#d97706' }} />
+            </div>
+            <div>
+              <div className="stat-label">Cached Responses</div>
+              <div className="stat-value">{stats.total_cached_responses}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Active in Redis</div>
             </div>
           </div>
         </div>
@@ -192,89 +206,130 @@ export default function Idempotency() {
 
       {/* Status Indicators */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-400">Redis Connection</span>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                stats.redis_connected 
-                  ? 'bg-green-500/20 text-green-400' 
-                  : 'bg-red-500/20 text-red-400'
-              }`}>
-                {stats.redis_connected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <div className="card" style={{ padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>Redis Connection</span>
+            <span className={`badge ${stats.redis_connected ? 'badge-green' : 'badge-red'}`}>
+              {stats.redis_connected ? 'Connected' : 'Disconnected'}
+            </span>
           </div>
 
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-400">Currently Processing</span>
-              <span className="text-white font-medium">{stats.currently_processing} requests</span>
-            </div>
+          <div className="card" style={{ padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 14, color: '#64748b', fontWeight: 500 }}>Currently Processing</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{stats.currently_processing} requests</span>
           </div>
         </div>
       )}
 
       {/* Cached Keys Table */}
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden">
-        <div className="p-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Cached Idempotency Keys</h2>
-          <p className="text-sm text-gray-400 mt-1">Recent keys with cached responses (max 50)</p>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: 20, borderBottom: '1px solid #f1f5f9' }}>
+          <h2 className="section-title">Cached Idempotency Keys</h2>
+          <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>Recent keys with cached responses (max 50)</p>
         </div>
 
         {keys.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">
+          <div style={{ padding: '60px 0', textAlign: 'center', fontSize: 14, color: '#94a3b8' }}>
             No cached idempotency keys found
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-900/50">
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ background: '#f8fafc' }}>
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  <th style={{ 
+                    padding: '12px 20px', 
+                    textAlign: 'left', 
+                    fontSize: 11, 
+                    fontWeight: 600, 
+                    color: '#64748b', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.05em' 
+                  }}>
                     Idempotency Key
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  <th style={{ 
+                    padding: '12px 20px', 
+                    textAlign: 'left', 
+                    fontSize: 11, 
+                    fontWeight: 600, 
+                    color: '#64748b', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.05em' 
+                  }}>
                     TTL
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  <th style={{ 
+                    padding: '12px 20px', 
+                    textAlign: 'left', 
+                    fontSize: 11, 
+                    fontWeight: 600, 
+                    color: '#64748b', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.05em' 
+                  }}>
                     Status
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  <th style={{ 
+                    padding: '12px 20px', 
+                    textAlign: 'left', 
+                    fontSize: 11, 
+                    fontWeight: 600, 
+                    color: '#64748b', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.05em' 
+                  }}>
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700">
-                {keys.map((key) => (
-                  <tr key={key.idempotency_key} className="hover:bg-gray-700/30">
-                    <td className="px-4 py-3 text-sm text-white font-mono">
+              <tbody>
+                {keys.map((key, index) => (
+                  <tr 
+                    key={key.idempotency_key} 
+                    style={{ 
+                      borderTop: '1px solid #f1f5f9',
+                      background: index % 2 === 0 ? '#ffffff' : '#f8fafc'
+                    }}
+                  >
+                    <td style={{ padding: '12px 20px', fontSize: 13, fontFamily: 'var(--font-mono)', color: '#334155' }}>
                       {key.idempotency_key}
                     </td>
-                    <td className="px-4 py-3 text-sm">
-                      <span className={`${
-                        key.ttl_seconds < 300 ? 'text-red-400' : 
-                        key.ttl_seconds < 3600 ? 'text-yellow-400' : 
-                        'text-green-400'
-                      }`}>
+                    <td style={{ padding: '12px 20px', fontSize: 13 }}>
+                      <span style={{ 
+                        color: key.ttl_seconds < 300 ? '#dc2626' : 
+                               key.ttl_seconds < 3600 ? '#d97706' : 
+                               '#16a34a',
+                        fontWeight: 500
+                      }}>
                         {formatTTL(key.ttl_seconds)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        key.has_response 
-                          ? 'bg-green-500/20 text-green-400' 
-                          : 'bg-gray-500/20 text-gray-400'
-                      }`}>
+                    <td style={{ padding: '12px 20px', fontSize: 13 }}>
+                      <span className={`badge ${key.has_response ? 'badge-green' : 'badge-gray'}`}>
                         {key.has_response ? 'Cached' : 'No Response'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm">
+                    <td style={{ padding: '12px 20px', fontSize: 13 }}>
                       <button
                         onClick={() => handleDeleteKey(key.idempotency_key)}
                         disabled={deleteLoading === key.idempotency_key}
-                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-xs disabled:opacity-50"
+                        style={{
+                          padding: '6px 12px',
+                          background: '#fef2f2',
+                          border: '1px solid #fecaca',
+                          borderRadius: 6,
+                          color: '#dc2626',
+                          fontSize: 12,
+                          cursor: deleteLoading === key.idempotency_key ? 'not-allowed' : 'pointer',
+                          fontWeight: 500,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          opacity: deleteLoading === key.idempotency_key ? 0.5 : 1
+                        }}
                       >
+                        <Trash2 style={{ width: 12, height: 12 }} />
                         {deleteLoading === key.idempotency_key ? 'Deleting...' : 'Delete'}
                       </button>
                     </td>
@@ -287,17 +342,31 @@ export default function Idempotency() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-        <h3 className="text-blue-400 font-medium mb-2">💡 About Idempotency</h3>
-        <p className="text-gray-300 text-sm">
+      <div style={{ 
+        marginTop: 24,
+        background: '#eff6ff', 
+        border: '1px solid #bfdbfe', 
+        borderRadius: 8, 
+        padding: 20 
+      }}>
+        <h3 style={{ color: '#1e40af', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>💡 About Idempotency</h3>
+        <p style={{ color: '#1e3a8a', fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
           Idempotency prevents duplicate payments when clients retry requests. Each request with the same 
-          <code className="mx-1 px-2 py-0.5 bg-gray-800 rounded text-xs">Idempotency-Key</code> 
+          <code style={{ 
+            margin: '0 4px', 
+            padding: '2px 6px', 
+            background: '#dbeafe', 
+            borderRadius: 4, 
+            fontSize: 12,
+            fontFamily: 'var(--font-mono)',
+            color: '#1e40af'
+          }}>Idempotency-Key</code> 
           header returns the same cached response, ensuring no duplicate charges occur.
         </p>
-        <ul className="mt-3 space-y-1 text-sm text-gray-400">
-          <li>• Cached responses expire after 24 hours</li>
-          <li>• Processing locks prevent race conditions</li>
-          <li>• High hit rate indicates effective duplicate prevention</li>
+        <ul style={{ margin: 0, paddingLeft: 20, color: '#475569', fontSize: 13, lineHeight: 1.8 }}>
+          <li>Cached responses expire after 24 hours</li>
+          <li>Processing locks prevent race conditions</li>
+          <li>High hit rate indicates effective duplicate prevention</li>
         </ul>
       </div>
     </div>

@@ -26,6 +26,28 @@ class IdempotencyService:
         self.redis = get_redis()
         self.ttl = settings.IDEMPOTENCY_KEY_TTL
         self.enabled = settings.IDEMPOTENCY_ENABLED
+        
+        # Initialize stats counters in Redis if they don't exist
+        self._init_stats_counters()
+    
+    def _init_stats_counters(self):
+        """Initialize statistics counters in Redis."""
+        try:
+            if not self.redis.exists("idem:stats:total_requests"):
+                self.redis.set("idem:stats:total_requests", 0)
+            if not self.redis.exists("idem:stats:cache_hits"):
+                self.redis.set("idem:stats:cache_hits", 0)
+            if not self.redis.exists("idem:stats:cache_misses"):
+                self.redis.set("idem:stats:cache_misses", 0)
+        except Exception as e:
+            logger.error(f"Error initializing stats counters: {e}")
+    
+    def _increment_stat(self, stat_name: str):
+        """Increment a statistics counter."""
+        try:
+            self.redis.incr(f"idem:stats:{stat_name}")
+        except Exception as e:
+            logger.error(f"Error incrementing stat {stat_name}: {e}")
     
     def _get_response_key(self, key: str) -> str:
         """Get Redis key for cached response."""
@@ -49,11 +71,17 @@ class IdempotencyService:
             return None
         
         try:
+            # Increment total requests
+            self._increment_stat("total_requests")
+            
             redis_key = self._get_response_key(key)
             data = self.redis.get(redis_key)
             
             if data:
                 logger.info(f"Idempotency cache hit for key: {key}")
+                # Increment cache hits
+                self._increment_stat("cache_hits")
+                
                 cached = json.loads(data)
                 
                 # Add replay metadata
@@ -62,6 +90,8 @@ class IdempotencyService:
                 
                 return cached
             
+            # Increment cache misses
+            self._increment_stat("cache_misses")
             return None
             
         except Exception as e:
@@ -192,6 +222,14 @@ class IdempotencyService:
             Dictionary with idempotency statistics
         """
         try:
+            # Get stats from Redis
+            total_requests = int(self.redis.get("idem:stats:total_requests") or 0)
+            cache_hits = int(self.redis.get("idem:stats:cache_hits") or 0)
+            cache_misses = int(self.redis.get("idem:stats:cache_misses") or 0)
+            
+            # Calculate hit rate
+            hit_rate = (cache_hits / total_requests * 100) if total_requests > 0 else 0.0
+            
             # Count cached responses
             pattern = "idem:response:*"
             cached_keys = list(self.redis.scan_iter(match=pattern, count=1000))
@@ -204,6 +242,10 @@ class IdempotencyService:
             
             return {
                 "enabled": self.enabled,
+                "total_requests": total_requests,
+                "cache_hits": cache_hits,
+                "cache_misses": cache_misses,
+                "hit_rate": round(hit_rate, 2),
                 "cached_responses": cached_count,
                 "currently_processing": processing_count,
                 "ttl_seconds": self.ttl,
@@ -214,6 +256,10 @@ class IdempotencyService:
             logger.error(f"Error getting idempotency stats: {e}")
             return {
                 "enabled": self.enabled,
+                "total_requests": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "hit_rate": 0.0,
                 "error": str(e)
             }
     
