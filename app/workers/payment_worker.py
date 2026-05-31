@@ -167,21 +167,67 @@ class PaymentWorker:
             if db:
                 db.close()
     
+    def _process_pending_events(self):
+        """
+        Process pending events that are ready for retry.
+        
+        Checks for events that were not acknowledged (pending) and processes
+        them if their retry time has arrived.
+        """
+        try:
+            # Get pending events for this consumer
+            # XPENDING shows events that were read but not acknowledged
+            pending_info = self.redis.xpending_range(
+                self.QUEUE_NAME,
+                self.CONSUMER_GROUP,
+                min='-',
+                max='+',
+                count=10,
+                consumername=self.CONSUMER_NAME
+            )
+            
+            if pending_info:
+                logger.debug(f"Found {len(pending_info)} pending events to check")
+                
+                for pending in pending_info:
+                    event_id = pending['message_id']
+                    
+                    # Claim the event to process it
+                    # XCLAIM transfers ownership of pending messages
+                    claimed = self.redis.xclaim(
+                        self.QUEUE_NAME,
+                        self.CONSUMER_GROUP,
+                        self.CONSUMER_NAME,
+                        min_idle_time=0,  # Claim immediately
+                        message_ids=[event_id]
+                    )
+                    
+                    if claimed:
+                        for claimed_id, event_data in claimed:
+                            self.process_event(claimed_id, event_data)
+                            
+        except Exception as e:
+            logger.error(f"Error processing pending events: {e}")
+    
     def start(self):
         """
         Start the worker to continuously process events.
         
         This runs an infinite loop that:
-        1. Reads events from Redis Stream
-        2. Processes each event
-        3. Waits for new events if queue is empty
+        1. First checks for pending events ready for retry
+        2. Then reads new events from Redis Stream
+        3. Processes each event
+        4. Waits for new events if queue is empty
         """
         self.running = True
         logger.info(f"Payment worker started. Listening to queue: {self.QUEUE_NAME}")
         
         while self.running:
             try:
-                # Read events from the stream
+                # STEP 1: Process pending events that might be ready for retry
+                self._process_pending_events()
+                
+                # STEP 2: Read new events from the stream
                 # XREADGROUP reads from consumer group for distributed processing
                 # block=1000 means wait up to 1 second for new events
                 # count=10 means read up to 10 events at a time
@@ -199,8 +245,8 @@ class PaymentWorker:
                         for event_id, event_data in stream_events:
                             self.process_event(event_id, event_data)
                 else:
-                    # No events, just log periodically
-                    logger.debug("No events in queue, waiting...")
+                    # No new events, just log periodically
+                    logger.debug("No new events in queue, waiting...")
                     
             except KeyboardInterrupt:
                 logger.info("Worker interrupted by user")

@@ -97,6 +97,32 @@ async def get_retry_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
             for payment in recent_failures
         ]
         
+        # Recent successful payments that had retries (recovered after failures)
+        recent_recoveries = db.query(Payment).filter(
+            Payment.status == "SUCCESS",
+            Payment.retry_count > 0
+        ).order_by(
+            Payment.updated_at.desc()
+        ).limit(10).all()
+        
+        recent_recoveries_list = [
+            {
+                "payment_id": str(payment.id),
+                "user_id": payment.user_id,
+                "amount": float(payment.amount),
+                "retry_count": payment.retry_count,
+                "recovered_at": payment.updated_at.isoformat(),
+                "created_at": payment.created_at.isoformat()
+            }
+            for payment in recent_recoveries
+        ]
+        
+        # Count of successful recoveries
+        total_recoveries = db.query(Payment).filter(
+            Payment.status == "SUCCESS",
+            Payment.retry_count > 0
+        ).count()
+        
         return {
             "total_payments_with_retries": total_with_retries,
             "retry_count_distribution": distribution,
@@ -104,7 +130,9 @@ async def get_retry_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "ready_for_retry": ready_for_retry,
             "average_retry_count": round(float(avg_retry), 2),
             "error_type_distribution": error_types,
-            "recent_failures": recent_failures_list
+            "recent_failures": recent_failures_list,
+            "recent_recoveries": recent_recoveries_list,
+            "total_recoveries": total_recoveries
         }
         
     except Exception as e:

@@ -19,6 +19,15 @@ interface RetryStats {
     next_retry_at: string | null;
     updated_at: string;
   }>;
+  recent_recoveries: Array<{
+    payment_id: string;
+    user_id: string;
+    amount: number;
+    retry_count: number;
+    recovered_at: string;
+    created_at: string;
+  }>;
+  total_recoveries: number;
 }
 
 const BACKOFF_SEQUENCE = [1, 2, 4, 8, 16];
@@ -99,6 +108,8 @@ const RetryMonitor = () => {
   const readyForRetry = stats?.ready_for_retry || 0;
   const avgRetryCount = stats?.average_retry_count || 0;
   const recentFailures = stats?.recent_failures || [];
+  const recentRecoveries = stats?.recent_recoveries || [];
+  const totalRecoveries = stats?.total_recoveries || 0;
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
@@ -258,6 +269,93 @@ const RetryMonitor = () => {
             )}
           </div>
         </div>
+
+        {/* Recent Successful Recoveries */}
+        {recentRecoveries.length > 0 && (
+          <div className="card" style={{ flex: 2, minWidth: 320, overflow: 'hidden' }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid #f1f5f9',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <CheckCircle2 style={{ width: 16, height: 16, color: '#16a34a' }} />
+                <h2 className="section-title">Successful Recoveries</h2>
+              </div>
+              <span className="badge" style={{ background: '#dcfce7', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                {totalRecoveries} total
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {recentRecoveries.map((recovery, index) => {
+                const createdTime = new Date(recovery.created_at);
+                const recoveredTime = new Date(recovery.recovered_at);
+                const timeDiff = Math.round((recoveredTime.getTime() - createdTime.getTime()) / 1000);
+                
+                return (
+                  <div
+                    key={recovery.payment_id}
+                    style={{
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      borderBottom: index < recentRecoveries.length - 1 ? '1px solid #f1f5f9' : 'none',
+                    }}
+                  >
+                    {/* Success icon */}
+                    <div style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#dcfce7',
+                      border: '1px solid #bbf7d0',
+                      flexShrink: 0,
+                    }}>
+                      <CheckCircle2 style={{ width: 18, height: 18, color: '#16a34a' }} />
+                    </div>
+
+                    {/* Payment ID */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <code style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#334155' }}>
+                        {recovery.payment_id.substring(0, 13)}...
+                      </code>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: '#16a34a', fontSize: 11, fontWeight: 500 }}>
+                        <TrendingUp style={{ width: 12, height: 12 }} />
+                        Recovered after {recovery.retry_count} {recovery.retry_count === 1 ? 'retry' : 'retries'}
+                      </div>
+                    </div>
+
+                    {/* Retry count badge */}
+                    <div style={{ textAlign: 'center', minWidth: 60 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>
+                        {recovery.retry_count}
+                      </p>
+                      <p style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                        {recovery.retry_count === 1 ? 'retry' : 'retries'}
+                      </p>
+                    </div>
+
+                    {/* Time to recover */}
+                    <div style={{ width: 90, textAlign: 'center' }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>
+                        {timeDiff < 60 ? `${timeDiff}s` : `${Math.round(timeDiff / 60)}m`}
+                      </p>
+                      <p style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+                        to recover
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Right Column: Stats and Backoff Panel */}
         <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 24 }}>
