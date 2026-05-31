@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Activity, Search, Pause, Play, Trash2 } from 'lucide-react';
+import { getRecentPayments } from '../services/api';
 
 interface EventItem {
   id: number;
@@ -8,55 +9,80 @@ interface EventItem {
   paymentId: string;
   color: string;
   bgColor: string;
+  status: string;
 }
 
-const EVENT_TYPES = [
-  { event: 'payment.created', color: '#64748b', bgColor: '#f1f5f9' },
-  { event: 'payment.enqueued', color: '#d97706', bgColor: '#fffbeb' },
-  { event: 'payment.processing', color: '#2563eb', bgColor: '#eff6ff' },
-  { event: 'payment.success', color: '#16a34a', bgColor: '#f0fdf4' },
-  { event: 'payment.failed', color: '#dc2626', bgColor: '#fef2f2' },
-  { event: 'payment.retry', color: '#7c3aed', bgColor: '#f3e8ff' },
-];
+const STATUS_TO_EVENT = {
+  'PENDING': { event: 'payment.created', color: '#64748b', bgColor: '#f1f5f9' },
+  'PROCESSING': { event: 'payment.processing', color: '#2563eb', bgColor: '#eff6ff' },
+  'SUCCESS': { event: 'payment.success', color: '#16a34a', bgColor: '#f0fdf4' },
+  'FAILED': { event: 'payment.failed', color: '#dc2626', bgColor: '#fef2f2' },
+};
 
 let eventCounter = 0;
 
-function generateEvent(): EventItem {
-  const type = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
-  const now = new Date();
-  eventCounter++;
-  return {
-    id: eventCounter,
-    time: now.toLocaleTimeString('en-US', { hour12: false }),
-    event: type.event,
-    paymentId: `pay_${1715751000000 + Math.floor(Math.random() * 999999)}`,
-    color: type.color,
-    bgColor: type.bgColor,
-  };
-}
-
 const Events = () => {
-  const [events, setEvents] = useState<EventItem[]>(() => {
-    const initial: EventItem[] = [];
-    for (let i = 0; i < 15; i++) initial.push(generateEvent());
-    return initial.reverse();
-  });
+  const [events, setEvents] = useState<EventItem[]>([]);
   const [paused, setPaused] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [lastPaymentIds, setLastPaymentIds] = useState<Set<string>>(new Set());
+
+  // Fetch real payment data and convert to events
+  const fetchPaymentEvents = async () => {
+    if (paused) return;
+
+    try {
+      const response = await getRecentPayments(20);
+      const payments = response.payments || [];
+
+      const newEvents: EventItem[] = [];
+      const currentPaymentIds = new Set<string>();
+
+      payments.forEach((payment: any) => {
+        const paymentId = payment.id;
+        currentPaymentIds.add(paymentId);
+
+        // Only add as new event if we haven't seen this payment before
+        // or if its status changed
+        if (!lastPaymentIds.has(paymentId)) {
+          const statusConfig = STATUS_TO_EVENT[payment.status as keyof typeof STATUS_TO_EVENT] || STATUS_TO_EVENT.PENDING;
+          
+          eventCounter++;
+          newEvents.push({
+            id: eventCounter,
+            time: new Date(payment.updated_at || payment.created_at).toLocaleTimeString('en-US', { hour12: false }),
+            event: statusConfig.event,
+            paymentId: paymentId,
+            color: statusConfig.color,
+            bgColor: statusConfig.bgColor,
+            status: payment.status
+          });
+        }
+      });
+
+      if (newEvents.length > 0) {
+        setEvents(prev => [...newEvents.reverse(), ...prev].slice(0, 50));
+      }
+
+      setLastPaymentIds(currentPaymentIds);
+    } catch (error) {
+      console.error('Error fetching payment events:', error);
+    }
+  };
 
   useEffect(() => {
-    if (paused) return;
-    const interval = setInterval(() => {
-      setEvents((prev) => [generateEvent(), ...prev].slice(0, 200));
-    }, 2000);
+    fetchPaymentEvents();
+    const interval = setInterval(fetchPaymentEvents, 2000); // Check every 2 seconds
     return () => clearInterval(interval);
   }, [paused]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [events.length]);
+    if (scrollRef.current && !paused) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [events]);
 
   const filtered = events.filter((e) => {
     if (filter && e.event !== filter) return false;
@@ -64,183 +90,200 @@ const Events = () => {
     return true;
   });
 
+  const eventTypes = Array.from(new Set(events.map(e => e.event)));
+
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
       {/* ── Header ──────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Event Stream</h1>
-          <p style={{ fontSize: 14, color: '#94a3b8', marginTop: 2 }}>Live Redis Pub/Sub event feed</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', background: paused ? '#fffbeb' : '#f0fdf4', borderRadius: 999, border: paused ? '1px solid #fde68a' : '1px solid #bbf7d0' }}>
-            <span className={paused ? '' : 'animate-pulse-green'} style={{ width: 8, height: 8, background: paused ? '#f59e0b' : '#22c55e', borderRadius: 999, display: 'inline-block' }} />
-            <span style={{ fontSize: 12, fontWeight: 600, color: paused ? '#b45309' : '#15803d' }}>{paused ? 'Paused' : 'Live'}</span>
-          </div>
-          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{events.length} events</span>
-        </div>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Event Stream</h1>
+        <p style={{ fontSize: 14, color: '#94a3b8', marginTop: 2 }}>Real-time payment lifecycle events</p>
       </div>
 
-      {/* ── Controls & Filter Bar ───────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#e2e8f0', borderRadius: 8, padding: 3 }}>
-          <button
-            onClick={() => setFilter(null)}
+      {/* ── Controls ────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 240 }}>
+          <Search style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: '#94a3b8' }} />
+          <input
+            type="text"
+            placeholder="Search payment ID or event..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             style={{
-              border: 'none',
-              padding: '6px 12px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              background: !filter ? '#ffffff' : 'transparent',
-              color: !filter ? '#0f172a' : '#64748b',
-              boxShadow: !filter ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+              width: '100%',
+              padding: '10px 12px 10px 38px',
+              border: '1px solid #e2e8f0',
+              borderRadius: 8,
+              fontSize: 13,
+              outline: 'none',
+              transition: 'border-color 0.15s ease'
             }}
-          >
-            All
-          </button>
-          {EVENT_TYPES.map((t) => (
+            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+            onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+          />
+        </div>
+
+        <button
+          onClick={() => setPaused(!paused)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 16px',
+            background: paused ? '#fef3c7' : '#eff6ff',
+            border: paused ? '1px solid #fde68a' : '1px solid #bfdbfe',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            color: paused ? '#92400e' : '#1e40af',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
+          onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+        >
+          {paused ? <Play style={{ width: 14, height: 14 }} /> : <Pause style={{ width: 14, height: 14 }} />}
+          {paused ? 'Resume' : 'Pause'}
+        </button>
+
+        <button
+          onClick={() => setEvents([])}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 16px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#64748b',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+          onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
+        >
+          <Trash2 style={{ width: 14, height: 14 }} />
+          Clear
+        </button>
+      </div>
+
+      {/* ── Filter Chips ────────────────────────── */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => setFilter(null)}
+          style={{
+            padding: '6px 14px',
+            borderRadius: 20,
+            fontSize: 12,
+            fontWeight: 600,
+            border: 'none',
+            cursor: 'pointer',
+            background: filter === null ? '#0f172a' : '#f1f5f9',
+            color: filter === null ? '#ffffff' : '#64748b',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          All ({events.length})
+        </button>
+        {eventTypes.map((type) => {
+          const count = events.filter(e => e.event === type).length;
+          return (
             <button
-              key={t.event}
-              onClick={() => setFilter(t.event === filter ? null : t.event)}
+              key={type}
+              onClick={() => setFilter(type)}
               style={{
-                border: 'none',
-                padding: '6px 12px',
-                borderRadius: 6,
+                padding: '6px 14px',
+                borderRadius: 20,
                 fontSize: 12,
                 fontWeight: 600,
+                border: 'none',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                background: filter === t.event ? '#ffffff' : 'transparent',
-                color: filter === t.event ? '#0f172a' : '#64748b',
-                boxShadow: filter === t.event ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                background: filter === type ? '#0f172a' : '#f1f5f9',
+                color: filter === type ? '#ffffff' : '#64748b',
+                transition: 'all 0.15s ease'
               }}
             >
-              {t.event.split('.')[1]}
+              {type} ({count})
             </button>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
-          <div style={{ position: 'relative', width: 200 }}>
-            <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: '#94a3b8' }} />
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Search events..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ paddingLeft: 34, paddingRight: 10, paddingTop: 6, paddingBottom: 6, fontSize: 13 }}
-            />
-          </div>
-
-          <button
-            onClick={() => setPaused(!paused)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '7px 14px',
-              borderRadius: 8,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              background: paused ? '#eff6ff' : '#fffbeb',
-              color: paused ? '#2563eb' : '#d97706',
-              border: paused ? '1px solid #bfdbfe' : '1px solid #fde68a',
-            }}
-          >
-            {paused ? <Play style={{ width: 13, height: 13 }} /> : <Pause style={{ width: 13, height: 13 }} />}
-            {paused ? 'Resume' : 'Pause'}
-          </button>
-
-          <button
-            onClick={() => setEvents([])}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '7px 14px',
-              borderRadius: 8,
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              background: '#ffffff',
-              color: '#64748b',
-              border: '1px solid #e2e8f0',
-            }}
-          >
-            <Trash2 style={{ width: 13, height: 13 }} />
-            Clear
-          </button>
-        </div>
+          );
+        })}
       </div>
 
-      {/* ── Terminal Event Log Card ─────────────── */}
-      <div className="card" style={{ background: '#0f172a', border: '1px solid #1e293b', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0, 0, 0, 0.2)' }}>
-        {/* Header toolbar */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '10px 18px',
-          background: '#1e293b',
-          borderBottom: '1px solid #334155'
-        }}>
-          <div style={{ width: 10, height: 10, borderRadius: 999, background: '#ef4444' }} />
-          <div style={{ width: 10, height: 10, borderRadius: 999, background: '#f59e0b' }} />
-          <div style={{ width: 10, height: 10, borderRadius: 999, background: '#10b981' }} />
-          <span style={{ marginLeft: 10, fontSize: 11, color: '#64748b', fontFamily: 'var(--font-mono)' }}>redis-events — payflow</span>
-          <div style={{ marginLeft: 'auto' }} />
-          <Activity style={{ width: 15, height: 15, color: '#475569' }} />
-        </div>
+      {/* ── Event List ──────────────────────────── */}
+      <div
+        ref={scrollRef}
+        className="card"
+        style={{
+          padding: 0,
+          maxHeight: 600,
+          overflowY: 'auto',
+          position: 'relative'
+        }}
+      >
+        {filtered.length === 0 && (
+          <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+            {events.length === 0 ? 'No events yet. Create some payments to see events.' : 'No events match your filter.'}
+          </div>
+        )}
 
-        {/* Console content */}
-        <div ref={scrollRef} style={{ maxHeight: 520, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {filtered.map((ev) => (
-            <div
-              key={ev.id}
-              className="event-log-line animate-fade-in"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                padding: '6px 12px',
-                borderRadius: 6,
-                color: '#e2e8f0',
-                transition: 'background-color 0.1s ease',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1e293b'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-            >
-              <span style={{ color: '#475569', width: 70, flexShrink: 0, userSelect: 'none' }}>{ev.time}</span>
-              <span style={{
-                color: ev.event.includes('success') ? '#4ade80' :
-                       ev.event.includes('failed') ? '#f87171' :
-                       ev.event.includes('processing') ? '#60a5fa' :
-                       ev.event.includes('enqueued') ? '#fbbf24' :
-                       ev.event.includes('retry') ? '#c084fc' :
-                       '#94a3b8',
-                fontWeight: 700,
-                width: 160,
-                flexShrink: 0
-              }}>{ev.event}</span>
-              <span style={{ color: '#64748b', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{ev.paymentId}</span>
+        {filtered.map((e, idx) => (
+          <div
+            key={e.id}
+            className="animate-fade-in"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              padding: '14px 20px',
+              borderBottom: idx < filtered.length - 1 ? '1px solid #f1f5f9' : 'none',
+              transition: 'background 0.15s ease',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(el) => el.currentTarget.style.background = '#f8fafc'}
+            onMouseLeave={(el) => el.currentTarget.style.background = 'transparent'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Activity style={{ width: 16, height: 16, color: e.color }} />
+              <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#94a3b8', minWidth: 70 }}>{e.time}</span>
+              <span
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: e.bgColor,
+                  color: e.color
+                }}
+              >
+                {e.event}
+              </span>
+              <code style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155', fontWeight: 500 }}>
+                {e.paymentId}
+              </code>
             </div>
-          ))}
-          {filtered.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '60px 0', fontSize: 13, color: '#475569', fontFamily: 'var(--font-mono)' }}>
-              NO EVENTS MATCHING CURRENT SEARCH OR FILTER.
-            </div>
-          )}
-        </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Info */}
+      <div style={{
+        marginTop: 16,
+        padding: '12px 16px',
+        background: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        borderRadius: 8,
+        fontSize: 12,
+        color: '#1e40af'
+      }}>
+        <strong>💡 Note:</strong> Events are generated from recent payment status changes. Updates every 2 seconds.
       </div>
     </div>
   );
 };
 
 export default Events;
+
+// Made with Bob

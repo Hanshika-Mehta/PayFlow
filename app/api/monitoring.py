@@ -244,19 +244,28 @@ def get_queue_contents():
     try:
         redis_client = get_redis()
         
-        # Get last 10 items from the queue
+        # Get last 100 items from the queue to show more
         queue_items = []
         try:
-            events = redis_client.xrevrange("payment_queue", count=10)
+            events = redis_client.xrevrange("payment_queue", count=100)
             for event_id, event_data in events:
-                payment_id = event_data.get(b'payment_id', b'unknown').decode('utf-8')
+                # Decode bytes to string
+                decoded_data = {}
+                for key, value in event_data.items():
+                    key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+                    value_str = value.decode('utf-8') if isinstance(value, bytes) else value
+                    decoded_data[key_str] = value_str
+                
                 queue_items.append({
-                    "payment_id": payment_id,
-                    "event_id": event_id,
-                    "timestamp": event_data.get(b'timestamp', b'').decode('utf-8')
+                    "payment_id": decoded_data.get('payment_id', 'unknown'),
+                    "event_id": event_id.decode('utf-8') if isinstance(event_id, bytes) else event_id,
+                    "timestamp": decoded_data.get('timestamp', ''),
+                    "user_id": decoded_data.get('user_id', ''),
+                    "amount": decoded_data.get('amount', '')
                 })
         except Exception as e:
             logger.error(f"Error reading queue contents: {e}")
+            logger.exception(e)
         
         return {
             "queue_length": redis_client.xlen("payment_queue"),
@@ -300,6 +309,75 @@ def get_recent_payments(limit: int = 10, db: Session = Depends(get_db)):
         logger.error(f"Error getting recent payments: {e}")
         return {
             "payments": [],
+            "error": str(e)
+        }
+
+@router.get("/monitoring/queue")
+def get_queue_monitoring():
+    """
+    Get detailed queue monitoring data.
+    
+    Returns:
+        Queue statistics including pending, processing, throughput
+    """
+    try:
+        redis_client = get_redis()
+        
+        # Get queue length
+        queue_length = redis_client.xlen("payment_queue")
+        
+        # Get pending groups info
+        try:
+            groups_info = redis_client.xinfo_groups("payment_queue")
+            pending_count = sum(group.get('pending', 0) for group in groups_info)
+        except:
+            pending_count = queue_length
+        
+        return {
+            "pending_count": queue_length,
+            "processing_count": 0,  # Would need worker tracking
+            "total_processed": 0,   # Would need metrics tracking
+            "lag_seconds": 0,       # Would need timestamp tracking
+            "throughput": 0         # Would need rate calculation
+        }
+    except Exception as e:
+        logger.error(f"Error getting queue monitoring: {e}")
+        return {
+            "pending_count": 0,
+            "processing_count": 0,
+            "total_processed": 0,
+            "lag_seconds": 0,
+            "throughput": 0,
+            "error": str(e)
+        }
+
+
+@router.get("/monitoring/workers")
+def get_worker_monitoring():
+    """
+    Get detailed worker monitoring data.
+    
+    Returns:
+        Worker statistics and status
+    """
+    try:
+        # In production, workers would report their status to Redis
+        # For now, return basic stats
+        return {
+            "active_workers": 1,
+            "idle_workers": 0,
+            "total_processed": 0,
+            "avg_processing_time": 0,
+            "success_rate": 0
+        }
+    except Exception as e:
+        logger.error(f"Error getting worker monitoring: {e}")
+        return {
+            "active_workers": 0,
+            "idle_workers": 0,
+            "total_processed": 0,
+            "avg_processing_time": 0,
+            "success_rate": 0,
             "error": str(e)
         }
 

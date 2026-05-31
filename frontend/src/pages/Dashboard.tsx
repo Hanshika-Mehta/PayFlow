@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CreditCard,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   Copy,
   Check,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import { createPayment, getDashboardStats, getQueueContents, getPayment } from '../services/api';
 import type { Payment } from '../types/payment';
@@ -28,6 +30,7 @@ const FLOW_STEPS = [
 
 /* ─── component ───────────────────────────────────── */
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({ amount: '1000', user_id: 'user_123', idempotency_key: '' });
   const [createdPaymentId, setCreatedPaymentId] = useState<string | null>(null);
   const [createdPaymentStatus, setCreatedPaymentStatus] = useState<string | null>(null);
@@ -135,6 +138,10 @@ const Dashboard = () => {
 
   const queueItems = queueData?.items || [];
   const queueLength = queueData?.queue_length || 0;
+  
+  // Show only top 5 items on dashboard
+  const displayedQueueItems = queueItems.slice(0, 5);
+  const hasMoreItems = queueItems.length > 5;
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
@@ -304,9 +311,41 @@ const Dashboard = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Queue */}
           <div className="card" style={{ padding: 20 }}>
-            <h2 className="section-title" style={{ marginBottom: 12 }}>Queue (Redis List)</h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h2 className="section-title">Queue (Redis List)</h2>
+              {hasMoreItems && (
+                <button
+                  onClick={() => navigate('/queue-monitor')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '4px 10px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: '#475569',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f1f5f9';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                  }}
+                >
+                  View All
+                  <ExternalLink style={{ width: 12, height: 12 }} />
+                </button>
+              )}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {queueItems.length > 0 ? queueItems.map((item: any) => (
+              {displayedQueueItems.length > 0 ? displayedQueueItems.map((item: any) => (
                 <div key={item.payment_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8 }}>
                   <code style={{ fontSize: 12, color: '#b45309', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{item.payment_id}</code>
                   <span style={{ fontSize: 11, color: '#d97706' }}>{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'N/A'}</span>
@@ -317,8 +356,13 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 12, color: '#64748b' }}>
-              Total Messages: <strong style={{ color: '#0f172a' }}>{queueLength}</strong>
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Total Messages: <strong style={{ color: '#0f172a' }}>{queueLength}</strong></span>
+              {hasMoreItems && (
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                  Showing top 5 of {queueLength}
+                </span>
+              )}
             </div>
           </div>
 

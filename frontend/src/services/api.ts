@@ -122,6 +122,24 @@ export const paymentApi = {
     const response = await api.get('/monitoring/week4-summary');
     return response.data;
   },
+
+  // Queue monitoring
+  getQueueMonitoring: async (): Promise<any> => {
+    const response = await api.get('/api/monitoring/queue');
+    return response.data;
+  },
+
+  // Worker monitoring
+  getWorkerMonitoring: async (): Promise<any> => {
+    const response = await api.get('/api/monitoring/workers');
+    return response.data;
+  },
+
+  // Get queue contents
+  getQueueContentsReal: async (): Promise<any> => {
+    const response = await api.get('/api/queue/contents');
+    return response.data;
+  },
 };
 
 // Export individual functions for convenience
@@ -149,6 +167,11 @@ export const resetRateLimit = paymentApi.resetRateLimit;
 
 // Week 4: Combined exports
 export const getWeek4Summary = paymentApi.getWeek4Summary;
+
+// Queue and Worker monitoring exports
+export const getQueueMonitoring = paymentApi.getQueueMonitoring;
+export const getWorkerMonitoring = paymentApi.getWorkerMonitoring;
+export const getQueueContentsReal = paymentApi.getQueueContentsReal;
 
 export default api;
 

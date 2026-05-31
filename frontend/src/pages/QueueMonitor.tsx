@@ -1,56 +1,95 @@
 import { useState, useEffect } from 'react';
 import { Database, ArrowRight, Layers, TrendingUp, Clock } from 'lucide-react';
+import { getQueueMonitoring, getQueueContentsReal } from '../services/api';
 
 interface QueueItem {
   id: string;
-  status: 'waiting' | 'processing' | 'consumed';
+  status: 'waiting' | 'processing';
   addedAt: string;
   priority: number;
 }
 
-const INITIAL_QUEUE: QueueItem[] = [
-  { id: 'pay_1715751111111', status: 'processing', addedAt: '10:30:15', priority: 1 },
-  { id: 'pay_1715752222222', status: 'waiting', addedAt: '10:30:16', priority: 2 },
-  { id: 'pay_1715753333333', status: 'waiting', addedAt: '10:30:17', priority: 3 },
-  { id: 'pay_1715754444444', status: 'waiting', addedAt: '10:30:18', priority: 4 },
-];
+interface QueueStats {
+  pending_count: number;
+  processing_count: number;
+  total_processed: number;
+  lag_seconds: number;
+  throughput: number;
+}
 
 const QueueMonitor = () => {
-  const [queue, setQueue] = useState<QueueItem[]>(INITIAL_QUEUE);
-  const [throughput, setThroughput] = useState(12.5);
-  const [totalProcessed, setTotalProcessed] = useState(47);
-  const [depthHistory, setDepthHistory] = useState([3, 5, 4, 6, 3, 4, 5, 3, 2, 4]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [stats, setStats] = useState<QueueStats>({
+    pending_count: 0,
+    processing_count: 0,
+    total_processed: 0,
+    lag_seconds: 0,
+    throughput: 0
+  });
+  const [depthHistory, setDepthHistory] = useState<number[]>([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const [loading, setLoading] = useState(true);
 
-  // Simulate queue activity
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setQueue((prev) => {
-        const updated = prev.map((item) => {
-          if (item.status === 'processing') return { ...item, status: 'consumed' as const };
-          return item;
+  // Fetch real queue data
+  const fetchQueueData = async () => {
+    try {
+      const [monitoringResponse, contentsResponse] = await Promise.all([
+        getQueueMonitoring(),
+        getQueueContentsReal()
+      ]);
+
+      // Update stats
+      if (monitoringResponse) {
+        setStats({
+          pending_count: monitoringResponse.pending_count || 0,
+          processing_count: monitoringResponse.processing_count || 0,
+          total_processed: monitoringResponse.total_processed || 0,
+          lag_seconds: monitoringResponse.lag_seconds || 0,
+          throughput: monitoringResponse.throughput || 0
         });
-        const nextWaiting = updated.findIndex((i) => i.status === 'waiting');
-        if (nextWaiting !== -1) updated[nextWaiting].status = 'processing';
-        // Add new item sometimes
-        if (Math.random() > 0.5) {
-          updated.push({
-            id: `pay_${Date.now()}`,
-            status: 'waiting',
-            addedAt: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 8),
-            priority: updated.length + 1,
-          });
-        }
-        return updated.filter((i) => i.status !== 'consumed').slice(-8);
+      }
+
+      // Update queue items
+      if (contentsResponse && contentsResponse.queue_items) {
+        const items: QueueItem[] = contentsResponse.queue_items.map((item: any, index: number) => ({
+          id: item.payment_id || `pay_${Date.now()}_${index}`,
+          status: index === 0 ? 'processing' : 'waiting',
+          addedAt: item.added_at || new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 8),
+          priority: index + 1
+        }));
+        setQueue(items.slice(0, 8)); // Show max 8 items
+      }
+
+      // Update depth history
+      setDepthHistory(prev => {
+        const newHistory = [...prev.slice(-9), monitoringResponse?.pending_count || 0];
+        return newHistory;
       });
-      setThroughput((t) => +(t + (Math.random() * 2 - 1)).toFixed(1));
-      setTotalProcessed((t) => t + 1);
-      setDepthHistory((h) => [...h.slice(-9), Math.floor(Math.random() * 6) + 1]);
-    }, 3000);
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching queue data:', error);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQueueData();
+    const interval = setInterval(fetchQueueData, 3000); // Update every 3 seconds
     return () => clearInterval(interval);
   }, []);
 
-  const activeCount = queue.filter((q) => q.status === 'waiting').length;
-  const processingCount = queue.filter((q) => q.status === 'processing').length;
+  const activeCount = stats.pending_count;
+  const processingCount = stats.processing_count;
+
+  if (loading) {
+    return (
+      <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
+        <div style={{ textAlign: 'center', padding: '60px 0', fontSize: 14, color: '#94a3b8' }}>
+          Loading queue data...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
@@ -78,7 +117,7 @@ const QueueMonitor = () => {
           <div>
             <div className="stat-label">Throughput</div>
             <div className="stat-value" style={{ fontSize: 22 }}>
-              {throughput} <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>msg/s</span>
+              {stats.throughput.toFixed(1)} <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>msg/s</span>
             </div>
           </div>
         </div>
@@ -87,9 +126,9 @@ const QueueMonitor = () => {
             <Clock style={{ width: 18, height: 18, color: '#16a34a' }} />
           </div>
           <div>
-            <div className="stat-label">Avg Wait</div>
+            <div className="stat-label">Queue Lag</div>
             <div className="stat-value" style={{ fontSize: 22 }}>
-              1.2 <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>sec</span>
+              {stats.lag_seconds.toFixed(1)} <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>sec</span>
             </div>
           </div>
         </div>
@@ -99,7 +138,7 @@ const QueueMonitor = () => {
           </div>
           <div>
             <div className="stat-label">Total Processed</div>
-            <div className="stat-value">{totalProcessed}</div>
+            <div className="stat-value">{stats.total_processed}</div>
           </div>
         </div>
       </div>
@@ -200,21 +239,25 @@ const QueueMonitor = () => {
         <div className="card" style={{ flex: 1, padding: 24, minWidth: 260 }}>
           <h2 className="section-title" style={{ marginBottom: 16 }}>Queue Depth (30s)</h2>
           <div style={{ height: 160, display: 'flex', alignItems: 'end', gap: 6, marginBottom: 16 }}>
-            {depthHistory.map((val, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
-                <div
-                  style={{
-                    width: '100%',
-                    background: 'linear-gradient(to top, #2563eb, #60a5fa)',
-                    borderTopLeftRadius: 4,
-                    borderTopRightRadius: 4,
-                    height: `${(val / 8) * 100}%`,
-                    transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-                  }}
-                />
-                <span style={{ fontSize: 9, color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>{val}</span>
-              </div>
-            ))}
+            {depthHistory.map((val, i) => {
+              const maxVal = Math.max(...depthHistory, 1);
+              return (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
+                  <div
+                    style={{
+                      width: '100%',
+                      background: 'linear-gradient(to top, #2563eb, #60a5fa)',
+                      borderTopLeftRadius: 4,
+                      borderTopRightRadius: 4,
+                      height: `${(val / maxVal) * 100}%`,
+                      transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      minHeight: val > 0 ? '4px' : '0'
+                    }}
+                  />
+                  <span style={{ fontSize: 9, color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>{val}</span>
+                </div>
+              );
+            })}
           </div>
           <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Avg Queue Depth</span>
@@ -229,3 +272,5 @@ const QueueMonitor = () => {
 };
 
 export default QueueMonitor;
+
+// Made with Bob

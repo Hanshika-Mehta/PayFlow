@@ -153,7 +153,7 @@ const Payments = () => {
               </thead>
               <tbody>
                 {filtered.map((p) => {
-                  const cfg = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG];
+                  const cfg = STATUS_CONFIG[p.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.PENDING;
                   const Icon = cfg.icon;
                   return (
                     <tr
