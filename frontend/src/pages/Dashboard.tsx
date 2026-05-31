@@ -99,8 +99,7 @@ const Dashboard = () => {
       const response = await createPayment({
         amount: parseFloat(formData.amount),
         user_id: formData.user_id,
-        idempotency_key: formData.idempotency_key || undefined,
-      });
+      }, formData.idempotency_key || undefined); // Pass idempotency key as second parameter
       setCreatedPaymentId(response.payment_id);
       setCreatedPaymentStatus(response.status);
     } catch (error) {
@@ -220,7 +219,44 @@ const Dashboard = () => {
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label className="form-label">Idempotency Key <span style={{ color: '#cbd5e1', fontWeight: 400, textTransform: 'none' }}>(Optional)</span></label>
-                <input className="form-input" type="text" value={formData.idempotency_key} onChange={(e) => setFormData({ ...formData, idempotency_key: e.target.value })} placeholder="abc-123" />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={formData.idempotency_key}
+                    onChange={(e) => setFormData({ ...formData, idempotency_key: e.target.value })}
+                    placeholder="test-key-123"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, idempotency_key: `test-${Date.now()}` })}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#7c3aed',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Generate
+                  </button>
+                </div>
+                <div style={{ marginTop: 8, padding: 10, background: '#f3e8ff', border: '1px solid #d8b4fe', borderRadius: 6 }}>
+                  <p style={{ fontSize: 11, color: '#6b21a8', fontWeight: 600, marginBottom: 4 }}>
+                    🔒 How to test idempotency:
+                  </p>
+                  <ol style={{ fontSize: 10, color: '#7c3aed', marginLeft: 16, lineHeight: 1.5 }}>
+                    <li>Click "Generate" or enter a key (e.g., "test-key-123")</li>
+                    <li>Click "Create Payment" - note the payment ID</li>
+                    <li>Click "Create Payment" again with the SAME key</li>
+                    <li>You'll get the SAME payment ID (cached response)</li>
+                  </ol>
+                </div>
               </div>
               <button type="submit" className="btn-primary" disabled={isSubmitting}>
                 {isSubmitting ? 'Processing...' : 'Create Payment'}

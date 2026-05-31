@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     DLQ_STREAM_NAME: str = "payment_dlq"
     DLQ_MAX_LENGTH: int = 10000
     
+    # Idempotency Configuration
+    IDEMPOTENCY_ENABLED: bool = True
+    IDEMPOTENCY_KEY_TTL: int = 86400  # 24 hours in seconds
+    IDEMPOTENCY_KEY_HEADER: str = "Idempotency-Key"
+    
+    # Rate Limiting Configuration
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_USER: int = 100  # requests per minute per user
+    RATE_LIMIT_PER_IP: int = 400  # requests per minute per IP
+    RATE_LIMIT_WINDOW: int = 60  # window in seconds
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

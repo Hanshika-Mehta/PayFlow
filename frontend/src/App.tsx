@@ -7,6 +7,7 @@ import Events from './pages/Events';
 import RetryMonitor from './pages/RetryMonitor';
 import DLQMonitor from './pages/DLQMonitor';
 import RateLimiting from './pages/RateLimiting';
+import Idempotency from './pages/Idempotency';
 import Cache from './pages/Cache';
 import Metrics from './pages/Metrics';
 import Sidebar from './components/Sidebar';
@@ -26,6 +27,7 @@ function App() {
             <Route path="/retries" element={<RetryMonitor />} />
             <Route path="/dlq" element={<DLQMonitor />} />
             <Route path="/rate-limiting" element={<RateLimiting />} />
+            <Route path="/idempotency" element={<Idempotency />} />
             <Route path="/cache" element={<Cache />} />
             <Route path="/metrics" element={<Metrics />} />
           </Routes>

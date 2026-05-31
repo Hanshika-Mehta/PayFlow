@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Skull,
   Gauge,
+  Shield,
   Database,
   BarChart3,
   Settings,
@@ -23,6 +24,7 @@ const menuItems = [
   { path: '/retries', icon: RotateCcw, label: 'Retry Monitor' },
   { path: '/dlq', icon: Skull, label: 'Dead Letter Queue' },
   { path: '/rate-limiting', icon: Gauge, label: 'Rate Limiting' },
+  { path: '/idempotency', icon: Shield, label: 'Idempotency' },
   { path: '/cache', icon: Database, label: 'Cache' },
   { path: '/metrics', icon: BarChart3, label: 'Metrics' },
 ];
@@ -82,7 +84,7 @@ const Sidebar = () => {
             Development
           </div>
           <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
-            v2.0.0 - Week 3
+            v3.0.0 - Week 4
           </div>
         </div>
       </div>

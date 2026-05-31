@@ -7,22 +7,31 @@ import type { PaymentCreateResponse } from '../types/payment';
 export default function CreatePayment() {
   const [userId, setUserId] = useState('user_123');
   const [amount, setAmount] = useState('500');
+  const [idempotencyKey, setIdempotencyKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PaymentCreateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [isReplay, setIsReplay] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResult(null);
+    setIsReplay(false);
 
     try {
       const response = await paymentApi.createPayment({
         user_id: userId,
         amount: parseFloat(amount),
-      });
+      }, idempotencyKey || undefined); // Pass idempotency key if provided
+      
+      // Check if this was a cached response (replay)
+      // The backend sends X-Idempotency-Replay header
+      setIsReplay(false); // We'll detect this from response headers if available
+      
       setResult(response);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to create payment');
@@ -97,6 +106,43 @@ export default function CreatePayment() {
                 />
               </div>
 
+              {/* Idempotency Key Input */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-3">
+                  <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  Idempotency Key <span className="text-slate-500 font-normal">(Optional)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={idempotencyKey}
+                    onChange={(e) => setIdempotencyKey(e.target.value)}
+                    className="flex-1 px-4 py-3.5 bg-slate-900/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                    placeholder="e.g., test-key-123"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIdempotencyKey(`test-${Date.now()}`)}
+                    className="px-4 py-3.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 text-purple-300 rounded-xl text-sm font-medium transition-all duration-200"
+                  >
+                    Generate
+                  </button>
+                </div>
+                <div className="mt-3 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                  <p className="text-xs text-purple-300 font-medium mb-1">
+                    🔒 How to test idempotency:
+                  </p>
+                  <ol className="text-xs text-slate-400 space-y-1 ml-4 list-decimal">
+                    <li>Enter a key (e.g., "test-key-123") or click Generate</li>
+                    <li>Click "Create Payment" - note the payment ID</li>
+                    <li>Click "Create Payment" again with the SAME key</li>
+                    <li>You'll get the SAME payment ID (cached response)</li>
+                  </ol>
+                </div>
+              </div>
+
               {/* Submit Button */}
               <motion.button
                 type="submit"
@@ -133,9 +179,16 @@ export default function CreatePayment() {
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-xl font-bold text-green-400 mb-4">
-                      Payment Created Successfully!
-                    </h3>
+                    <div className="flex items-center gap-3 mb-4">
+                      <h3 className="text-xl font-bold text-green-400">
+                        Payment Created Successfully!
+                      </h3>
+                      {idempotencyKey && (
+                        <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-semibold border border-purple-500/30">
+                          🔒 Idempotent
+                        </span>
+                      )}
+                    </div>
                     
                     {/* Payment ID */}
                     <div className="space-y-3">
@@ -168,8 +221,19 @@ export default function CreatePayment() {
                       </div>
                     </div>
 
+                    {idempotencyKey && (
+                      <div className="mt-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                        <p className="text-xs text-purple-300 font-medium mb-1">
+                          🔒 Idempotency Key Used: <code className="text-purple-200">{idempotencyKey}</code>
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          If you submit again with the same key, you'll get this exact payment ID back (cached response).
+                        </p>
+                      </div>
+                    )}
+                    
                     <p className="text-sm text-slate-400 mt-4 leading-relaxed">
-                      💡 Payment is being processed asynchronously by our worker service. 
+                      💡 Payment is being processed asynchronously by our worker service.
                       Check the status in a few seconds to see the result.
                     </p>
                   </div>

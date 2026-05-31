@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Gauge, Send, CheckCircle2, XCircle, RefreshCcw } from 'lucide-react';
+import { Gauge, Send, CheckCircle2, XCircle, RefreshCcw, Users, Globe } from 'lucide-react';
+import { getRateLimitStats, getRateLimitUsers, getRateLimitIps, resetRateLimit } from '../services/api';
 
 interface RequestLog {
   id: number;
@@ -8,17 +9,105 @@ interface RequestLog {
   remaining: number;
 }
 
+interface RateLimitStats {
+  total_requests: number;
+  allowed_requests: number;
+  blocked_requests: number;
+  block_rate: number;
+  active_user_limits: number;
+  active_ip_limits: number;
+  redis_connected: boolean;
+}
+
+interface RateLimitedUser {
+  user_id: string;
+  current_requests: number;
+  ttl_seconds: number;
+}
+
+interface RateLimitedIP {
+  ip_address: string;
+  current_requests: number;
+  ttl_seconds: number;
+}
+
 const MAX_REQUESTS = 100;
 const RESET_PERIOD = 60; // seconds
 
 const RateLimiting = () => {
+  const [stats, setStats] = useState<RateLimitStats | null>(null);
+  const [users, setUsers] = useState<RateLimitedUser[]>([]);
+  const [ips, setIPs] = useState<RateLimitedIP[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Mock state for demo
   const [remaining, setRemaining] = useState(76);
   const [resetTimer, setResetTimer] = useState(42);
   const [logs, setLogs] = useState<RequestLog[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [burstMode, setBurstMode] = useState(false);
 
-  // Reset timer countdown
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [statsResponse, usersResponse, ipsResponse] = await Promise.all([
+        getRateLimitStats(),
+        getRateLimitUsers(20),
+        getRateLimitIps(20)
+      ]);
+
+      if (statsResponse.status === 'success') {
+        setStats(statsResponse.data);
+      }
+
+      if (usersResponse.status === 'success') {
+        setUsers(usersResponse.data.users || []);
+      }
+
+      if (ipsResponse.status === 'success') {
+        setIPs(ipsResponse.data.ips || []);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch rate limit data');
+      console.error('Error fetching rate limit data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetUser = async (userId: string) => {
+    if (!confirm(`Reset rate limit for user: ${userId}?`)) return;
+    
+    try {
+      await resetRateLimit(userId, 'user');
+      await fetchData();
+    } catch (err: any) {
+      alert(`Failed to reset: ${err.message}`);
+    }
+  };
+
+  const handleResetIP = async (ip: string) => {
+    if (!confirm(`Reset rate limit for IP: ${ip}?`)) return;
+    
+    try {
+      await resetRateLimit(ip, 'ip');
+      await fetchData();
+    } catch (err: any) {
+      alert(`Failed to reset: ${err.message}`);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+    // Refresh every 5 seconds
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Reset timer countdown (mock)
   useEffect(() => {
     const interval = setInterval(() => {
       setResetTimer((t) => {
@@ -32,7 +121,7 @@ const RateLimiting = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Burst mode
+  // Burst mode (mock)
   useEffect(() => {
     if (!burstMode) return;
     const interval = setInterval(() => {
@@ -73,13 +162,67 @@ const RateLimiting = () => {
                      percentage > 20 ? 'linear-gradient(to top, #f59e0b, #fbbf24)' :
                                        'linear-gradient(to top, #ef4444, #f87171)';
 
+  const formatTTL = (seconds: number): string => {
+    if (seconds < 0) return 'Expired';
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  };
+
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
       {/* ── Header ──────────────────────────────── */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Rate Limiting</h1>
-        <p style={{ fontSize: 14, color: '#94a3b8', marginTop: 2 }}>Token Bucket rate limiter — interactive playground</p>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a' }}>Rate Limiting</h1>
+          <p style={{ fontSize: 14, color: '#94a3b8', marginTop: 2 }}>Real-time rate limit monitoring and interactive playground</p>
+        </div>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          style={{
+            padding: '8px 16px',
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: 'pointer',
+            background: '#ffffff',
+            color: '#64748b',
+            border: '1px solid #e2e8f0',
+          }}
+        >
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
+
+      {/* Real Stats Cards */}
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Total Requests</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#0f172a' }}>{stats.total_requests}</div>
+          </div>
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Allowed</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981' }}>{stats.allowed_requests}</div>
+          </div>
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Blocked</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{stats.blocked_requests}</div>
+          </div>
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Block Rate</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{stats.block_rate.toFixed(1)}%</div>
+          </div>
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Active Users</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#6366f1' }}>{stats.active_user_limits}</div>
+          </div>
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Active IPs</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#8b5cf6' }}>{stats.active_ip_limits}</div>
+          </div>
+        </div>
+      )}
 
       {/* ── Main Layout Split ───────────────────── */}
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -101,8 +244,8 @@ const RateLimiting = () => {
                   <Gauge style={{ width: 20, height: 20, color: '#2563eb' }} />
                 </div>
                 <div>
-                  <h2 className="section-title">Requests Remaining</h2>
-                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Token Bucket Algorithm</p>
+                  <h2 className="section-title">Demo: Requests Remaining</h2>
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Interactive Playground</p>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -198,7 +341,7 @@ const RateLimiting = () => {
           {/* Request Stream Logs */}
           <div className="card" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '14px 20px', borderBottom: '1px solid #f1f5f9' }}>
-              <h2 className="section-title">Request Log</h2>
+              <h2 className="section-title">Demo Request Log</h2>
             </div>
             <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
               {logs.map((log, idx) => (
@@ -232,6 +375,110 @@ const RateLimiting = () => {
               )}
             </div>
           </div>
+
+          {/* Rate Limited Users */}
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Users style={{ width: 16, height: 16, color: '#6366f1' }} />
+              <h2 className="section-title">Rate Limited Users</h2>
+            </div>
+            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+              {users.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', fontSize: 13, color: '#94a3b8' }}>
+                  No active user rate limits
+                </div>
+              ) : (
+                <table style={{ width: '100%' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>User ID</th>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Requests</th>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>TTL</th>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr key={user.user_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 20px', fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155' }}>{user.user_id}</td>
+                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#334155' }}>{user.current_requests} / 100</td>
+                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#64748b' }}>{formatTTL(user.ttl_seconds)}</td>
+                        <td style={{ padding: '10px 20px' }}>
+                          <button
+                            onClick={() => handleResetUser(user.user_id)}
+                            style={{
+                              padding: '4px 12px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                            }}
+                          >
+                            Reset
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Rate Limited IPs */}
+          <div className="card" style={{ overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Globe style={{ width: 16, height: 16, color: '#8b5cf6' }} />
+              <h2 className="section-title">Rate Limited IPs</h2>
+            </div>
+            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+              {ips.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', fontSize: 13, color: '#94a3b8' }}>
+                  No active IP rate limits
+                </div>
+              ) : (
+                <table style={{ width: '100%' }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>IP Address</th>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Requests</th>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>TTL</th>
+                      <th style={{ padding: '10px 20px', textAlign: 'left', fontSize: 11, color: '#64748b', fontWeight: 600 }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ips.map((ip) => (
+                      <tr key={ip.ip_address} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 20px', fontSize: 12, fontFamily: 'var(--font-mono)', color: '#334155' }}>{ip.ip_address}</td>
+                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#334155' }}>{ip.current_requests} / 200</td>
+                        <td style={{ padding: '10px 20px', fontSize: 12, color: '#64748b' }}>{formatTTL(ip.ttl_seconds)}</td>
+                        <td style={{ padding: '10px 20px' }}>
+                          <button
+                            onClick={() => handleResetIP(ip.ip_address)}
+                            style={{
+                              padding: '4px 12px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 500,
+                              cursor: 'pointer',
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fecaca',
+                            }}
+                          >
+                            Reset
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Right Column (Info / Config / Visual Bucket) */}
@@ -241,10 +488,10 @@ const RateLimiting = () => {
             <h3 className="section-title" style={{ marginBottom: 12 }}>How it Works</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
               <p>
-                <strong style={{ color: '#334155' }}>Token Bucket</strong> algorithm grants a user a budget of request tokens which refill at a steady rate.
+                <strong style={{ color: '#334155' }}>Sliding Window</strong> algorithm tracks requests in a time window and enforces limits per user and IP.
               </p>
               <p>
-                Requests consume one token each. If empty, the processor returns a <code style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'var(--font-mono)' }}>429 Too Many Requests</code>.
+                When limits are exceeded, the API returns <code style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 4px', borderRadius: 4, fontSize: 11, fontFamily: 'var(--font-mono)' }}>429 Too Many Requests</code>.
               </p>
             </div>
           </div>
@@ -253,16 +500,16 @@ const RateLimiting = () => {
           <div className="card" style={{ padding: 20 }}>
             <h3 className="section-title" style={{ marginBottom: 12 }}>Configuration</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <DetailRow label="Max Requests" value={String(MAX_REQUESTS)} />
-              <DetailRow label="Window Period" value={`${RESET_PERIOD}s`} />
-              <DetailRow label="Algorithm" value="Token Bucket" />
-              <DetailRow label="Current Usage" value={`${MAX_REQUESTS - remaining} / ${MAX_REQUESTS}`} />
+              <DetailRow label="User Limit" value="100 req/min" />
+              <DetailRow label="IP Limit" value="200 req/min" />
+              <DetailRow label="Algorithm" value="Sliding Window" />
+              <DetailRow label="Window Period" value="60s" />
             </div>
           </div>
 
           {/* Live Liquid Gauge Token Bucket */}
           <div className="card" style={{ padding: 20 }}>
-            <h3 className="section-title" style={{ marginBottom: 12 }}>Token Bucket</h3>
+            <h3 className="section-title" style={{ marginBottom: 12 }}>Demo Token Bucket</h3>
             <div style={{
               position: 'relative',
               width: '100%',
@@ -298,6 +545,19 @@ const RateLimiting = () => {
               </div>
             </div>
           </div>
+
+          {/* Redis Status */}
+          {stats && (
+            <div className="card" style={{ padding: 20 }}>
+              <h3 className="section-title" style={{ marginBottom: 12 }}>System Status</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, color: '#64748b' }}>Redis Connection</span>
+                <span className={`badge ${stats.redis_connected ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 10 }}>
+                  {stats.redis_connected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -312,3 +572,5 @@ const DetailRow = ({ label, value }: { label: string; value: string }) => (
 );
 
 export default RateLimiting;
+
+// Made with Bob

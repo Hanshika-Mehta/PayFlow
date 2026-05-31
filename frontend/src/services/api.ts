@@ -20,8 +20,9 @@ const api = axios.create({
 
 export const paymentApi = {
   // Create a new payment
-  createPayment: async (data: PaymentCreateRequest): Promise<PaymentCreateResponse> => {
-    const response = await api.post<PaymentCreateResponse>('/payments', data);
+  createPayment: async (data: PaymentCreateRequest, idempotencyKey?: string): Promise<PaymentCreateResponse> => {
+    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {};
+    const response = await api.post<PaymentCreateResponse>('/payments', data, { headers });
     return response.data;
   },
 
@@ -78,6 +79,49 @@ export const paymentApi = {
     const response = await api.get(`/api/payments/recent?limit=${limit}`);
     return response.data;
   },
+
+  // Week 4: Idempotency endpoints
+  getIdempotencyStats: async (): Promise<any> => {
+    const response = await api.get('/monitoring/idempotency-stats');
+    return response.data;
+  },
+
+  getIdempotencyKeys: async (limit: number = 50): Promise<any> => {
+    const response = await api.get(`/monitoring/idempotency-keys?limit=${limit}`);
+    return response.data;
+  },
+
+  deleteIdempotencyKey: async (key: string): Promise<any> => {
+    const response = await api.delete(`/monitoring/idempotency-keys/${key}`);
+    return response.data;
+  },
+
+  // Week 4: Rate limiting endpoints
+  getRateLimitStats: async (): Promise<any> => {
+    const response = await api.get('/monitoring/rate-limit-stats');
+    return response.data;
+  },
+
+  getRateLimitUsers: async (limit: number = 50): Promise<any> => {
+    const response = await api.get(`/monitoring/rate-limit-users?limit=${limit}`);
+    return response.data;
+  },
+
+  getRateLimitIps: async (limit: number = 50): Promise<any> => {
+    const response = await api.get(`/monitoring/rate-limit-ips?limit=${limit}`);
+    return response.data;
+  },
+
+  resetRateLimit: async (identifier: string, limitType: 'user' | 'ip' = 'user'): Promise<any> => {
+    const response = await api.delete(`/monitoring/rate-limit-reset/${identifier}?limit_type=${limitType}`);
+    return response.data;
+  },
+
+  // Week 4: Combined summary
+  getWeek4Summary: async (): Promise<any> => {
+    const response = await api.get('/monitoring/week4-summary');
+    return response.data;
+  },
 };
 
 // Export individual functions for convenience
@@ -91,6 +135,20 @@ export const getPaymentTimeline = paymentApi.getPaymentTimeline;
 export const getDashboardStats = paymentApi.getDashboardStats;
 export const getQueueContents = paymentApi.getQueueContents;
 export const getRecentPayments = paymentApi.getRecentPayments;
+
+// Week 4: Idempotency exports
+export const getIdempotencyStats = paymentApi.getIdempotencyStats;
+export const getIdempotencyKeys = paymentApi.getIdempotencyKeys;
+export const deleteIdempotencyKey = paymentApi.deleteIdempotencyKey;
+
+// Week 4: Rate limiting exports
+export const getRateLimitStats = paymentApi.getRateLimitStats;
+export const getRateLimitUsers = paymentApi.getRateLimitUsers;
+export const getRateLimitIps = paymentApi.getRateLimitIps;
+export const resetRateLimit = paymentApi.resetRateLimit;
+
+// Week 4: Combined exports
+export const getWeek4Summary = paymentApi.getWeek4Summary;
 
 export default api;
 

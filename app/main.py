@@ -5,8 +5,10 @@ This is the entry point for the PayFlow payment processing system.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import payments, monitoring, retry_monitoring
+from app.api import payments, monitoring, retry_monitoring, advanced_monitoring
 from app.db.database import engine, Base
+from app.middleware.idempotency import IdempotencyMiddleware
+from app.middleware.rate_limiting import RateLimitMiddleware
 
 # Create database tables
 # This will create all tables defined in our models
@@ -15,8 +17,8 @@ Base.metadata.create_all(bind=engine)
 # Initialize FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Distributed Payment Processing Simulation Platform - Week 3: Retry + DLQ",
-    version="2.0.0",
+    description="Distributed Payment Processing Simulation Platform - Week 4: Idempotency + Rate Limiting",
+    version="3.0.0",
     docs_url="/docs",  # Swagger UI
     redoc_url="/redoc"  # ReDoc UI
 )
@@ -30,6 +32,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Rate Limiting middleware (applied first, before idempotency)
+# This ensures rate limits are checked before any processing
+if settings.RATE_LIMIT_ENABLED:
+    app.add_middleware(RateLimitMiddleware)
+
+# Add Idempotency middleware (applied after rate limiting)
+# This handles duplicate request detection
+if settings.IDEMPOTENCY_ENABLED:
+    app.add_middleware(IdempotencyMiddleware)
+
 # Include payment routes
 app.include_router(payments.router)
 
@@ -38,6 +50,9 @@ app.include_router(monitoring.router)
 
 # Include retry and DLQ monitoring routes
 app.include_router(retry_monitoring.router)
+
+# Include advanced monitoring routes (Week 4: Idempotency + Rate Limiting)
+app.include_router(advanced_monitoring.router)
 
 
 @app.get("/", tags=["health"])
